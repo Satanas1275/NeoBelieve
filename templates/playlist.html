@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>{{ playlist.name }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="container" style="padding-bottom:120px;">
+    <h1>{{ playlist.name }}</h1>
+    <p>🎶 {{ playlist.tracks.total }} titres</p>
+    <button onclick='playPlaylist({{ tracks|tojson }},0)'>▶️ Play Playlist</button>
+    <table class="tracklist">
+        <thead>
+            <tr><th>#</th><th>Nom</th><th>Artiste</th><th>Album</th><th>Durée</th><th>Play</th><th>Download</th></tr>
+        </thead>
+        <tbody>
+            {% for track in tracks %}
+            <tr>
+                <td>{{ track['Track Number'] }}</td>
+                <td>{{ track['Track Name'] }}</td>
+                <td>{{ track['Artist Name(s)'] }}</td>
+                <td>{{ track['Album Name'] }}</td>
+                <td>{{ (track['Track Duration (ms)']|int // 60000) }}:{{ '%02d' % ((track['Track Duration (ms)']|int // 1000) % 60) }}</td>
+                <td><button onclick='playCSVTrack({{ track|tojson }})'>▶️</button></td>
+                <td><button onclick='downloadTrack("", "{{ track["Track Name"] }}")'>⬇️</button></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div id="player-bar">
+    <audio id="audio-player" controls></audio>
+    <span id="player-info"></span>
+</div>
+<script src="{{ url_for('static', filename='player.js') }}"></script>
+</body>
+</html>

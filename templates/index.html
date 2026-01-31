@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>NeoBelieve</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+<div class="container" style="padding-bottom:120px;">
+    <h1>NeoBelieve</h1>
+
+    <!-- 🔍 Recherche -->
+    <div class="search-bar">
+        <input id="search-input" placeholder="Rechercher un titre...">
+        <button id="search-btn">🔍</button>
+    </div>
+    <div id="search-results"></div>
+
+    <!-- ⏮ Playlists CSV -->
+    <h2>Jump Back In (Playlists CSV)</h2>
+    <div class="playlist-list">
+        {% for p in playlists %}
+        <div class="jump-card"
+             onclick="window.location.href='{{ url_for('show_playlist', playlist_name=p.name) }}'">
+            <div class="cover"
+                 {% if p.images and p.images[0].url %}
+                 style="background-image:url('{{ p.images[0].url }}');"
+                 {% endif %}>
+            </div>
+            <p>{{ p.name }}</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- 🎶 Derniers joués -->
+<h2>🎶 Derniers joués</h2>
+<div class="playlist-list">
+    {% for r in recent %}
+    <div class="jump-card"
+         onclick='playTrack("{{ r.url }}","{{ r.title }}")'>
+        <div class="cover"
+             style="background-image:url('/cover/{{ r.title }}.jpg');"
+             onerror="this.style.backgroundImage='url({{ url_for('static', filename='default_cover.jpg') }})';">
+        </div>
+        <p>{{ r.title }}</p>
+    </div>
+    {% endfor %}
+
+    {% if recent|length == 0 %}
+    <p style="color:#888;">Aucun titre récemment joué.</p>
+    {% endif %}
+</div>
+
+
+    <!-- 💾 Musiques téléchargées -->
+    <h2>💾 Downloaded Music</h2>
+    <div class="playlist-list">
+        {% for f in downloaded %}
+        <div class="jump-card"
+             onclick='playTrack("{{ f.path }}","{{ f.title }}")'>
+            <div class="cover"
+                 style="background-image:url('/cover/{{ f.title }}.jpg');"
+                 onerror="this.style.backgroundImage='url({{ url_for('static', filename='default_cover.jpg') }})';">
+            </div>
+            <p>{{ f.title }}</p>
+        </div>
+        {% endfor %}
+
+        {% if downloaded|length == 0 %}
+        <p style="color:#888;">Aucune musique téléchargée.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 🎧 Player -->
+<div id="player-bar">
+    <audio id="audio-player" controls></audio>
+    <span id="player-info"></span>
+</div>
+
+<script src="{{ url_for('static', filename='player.js') }}"></script>
+</body>
+</html>
