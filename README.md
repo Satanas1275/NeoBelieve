@@ -77,5 +77,4 @@ See the `LICENSE` file for full details.
 
 ## 🖤 Author
 
-Developed by **Satanas1275**
-Independent **French developer** 🇫🇷
+Developed by **Satanas1275**, independent **French developer** 🇫🇷
