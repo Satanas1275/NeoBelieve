@@ -122,23 +122,117 @@ table.tracklist {
     bottom: 0;
     left: 0;
     width: 100%;
-    background: #1e1e1e;
-    padding: 10px 20px;
+    background: #181818;
+    padding: 8px 20px;
+    display: flex;
+    justify-content: space-between;     /* ← clé : gauche | centre | droite */
+    align-items: center;
+    box-shadow: 0 -2px 15px rgba(0,0,0,0.6);
+    z-index: 1000;
+    height: 100px;
+}
+
+.track-left {
     display: flex;
     align-items: center;
-    gap: 15px;
-    box-shadow: 0 -2px 10px rgba(0,0,0,0.6);
+    gap: 12px;
+    min-width: 180px;          /* évite que ça rétrécisse trop */
+    margin-left: 10px;
+    margin-top: -20px;
 }
 
-#audio-player {
-    width: 100%;
+#track-cover {
+    width: 56px;
+    height: 56px;
+    object-fit: cover;
+    border-radius: 4px;
 }
 
-#player-info {
-    flex: 1;
-    font-size: 14px;
+#track-info {
+    font-size: 13px;
+    color: #eee;
+    max-width: 180px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: #ddd;
+}
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: -20px;
+}
+
+.controls button {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 4px;
+}
+
+.controls button:hover {
+    color: #1db954;
+}
+
+.volume {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 140px;
+    justify-content: flex-end;
+    margin-right: 50px;
+    margin-top: -20px;
+}
+
+.volume input[type="range"] {
+    width: 100px;
+}
+
+.progress-container {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 10px;
+    font-size: 11px;
+    color: #ccc;
+    margin-bottom: 20px;
+    margin-left: 0px;
+    margin-right: 40px;
+}
+
+#progress {
+    flex: 1;
+    height: 4px;
+    margin: 0;
+}
+
+#current-time, #duration {
+    min-width: 40px;
+    text-align: center;
+}
+
+.controls button {
+    width: 32px;
+    height: 32px;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    border-radius: 100%;
+}
+
+.controls button:hover {
+    background: #333;
+}
+
+.controls button img {
+    margin-top: 4px;
 }

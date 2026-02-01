@@ -73,12 +73,56 @@
     </div>
 </div>
 
-<!-- 🎧 Player -->
 <div id="player-bar">
-    <audio id="audio-player" controls></audio>
-    <span id="player-info"></span>
+
+    <!-- Gauche : pochette + infos -->
+    <div class="track-left">
+        <img id="track-cover" src="{{ url_for('static', filename='/img/default_cover.jpg') }}" alt="Cover" onerror="this.src='/static/img/default_cover.jpg'">
+        <div id="track-info">Aucun titre sélectionné</div>
+    </div>
+
+    <!-- Centre : contrôles principaux -->
+    <div class="controls">
+        <div class="controls">
+        <button id="shuffle"><img src="/static/img/shuffle.png" alt="Shuffle"></button>
+        <button id="prev"><img src="/static/img/skip_previous.png" alt="Previous"></button>
+        <button id="play"><img src="/static/img/play.png" alt="Play"></button>
+        <button id="next"><img src="/static/img/skip_next.png" alt="Next"></button>
+        <button id="repeat"><img src="/static/img/repeat.png" alt="Repeat"></button>
+        <button id="queue-btn"><img src="/static/img/queued_music.png" alt="Queue"></button>
+    </div>
+
+    </div>
+
+    <!-- Droite : volume -->
+    <div class="volume">
+        <span>🔊</span>
+        <input type="range" id="volume" min="0" max="1" step="0.01" value="1">
+    </div>
+
+    <!-- Barre de progression tout en bas -->
+    <div class="progress-container">
+        <span id="current-time">0:00</span>
+        <input type="range" id="progress" value="0" min="0" max="100" step="0.1">
+        <span id="duration">0:00</span>
+    </div>
+
+    <audio id="audio-player"></audio>
 </div>
 
+
 <script src="{{ url_for('static', filename='player.js') }}"></script>
+<script src="{{ url_for('static', filename='player2.js') }}"></script>
+
+<!-- Queue Modal -->
+<div id="queue-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; color:black;">
+    <div style="background:white; margin:10% auto; width:80%; max-width:600px; padding:20px; border-radius:10px;">
+        <h3>File d'attente (Queue)</h3>
+        <input id="add-queue-input" placeholder="Rechercher et ajouter une musique" style="width:70%; padding:5px;">
+        <button id="add-queue-btn" style="padding:5px;">Ajouter</button>
+        <ul id="queue-list" style="list-style:none; padding:0; max-height:300px; overflow-y:auto;"></ul>
+        <button id="close-queue" style="margin-top:10px; padding:5px;">Fermer</button>
+    </div>
+</div>
 </body>
 </html>
