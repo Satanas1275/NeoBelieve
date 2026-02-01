@@ -71,7 +71,7 @@ This project is licensed under:
 * Commercial use is forbidden
 * Derivative works must use the same license
 
-See the `LICENSE` file for full details.
+See the `[LICENSE](LICENSE.md)` file for full details.
 
 ---
 
