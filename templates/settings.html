@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>NeoBelieve · Paramètres</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="container">
+    <div class="topbar">
+        <div>
+            <h1>Paramètres</h1>
+            <p class="subtle">Gère ton cache et tes préférences locales.</p>
+        </div>
+        <div class="topbar-actions">
+            <a class="pill-btn ghost" href="{{ url_for('index') }}">Retour</a>
+        </div>
+    </div>
+
+    <section class="settings-card">
+        <div class="settings-row">
+            <div>
+                <h2>Cache audio</h2>
+                <p class="subtle">Taille actuelle : {{ (cache_size / 1024 / 1024) | round(2) }} Mo</p>
+            </div>
+            <button id="clear-cache" class="pill-btn">Vider le cache</button>
+        </div>
+        <p class="subtle">Cela supprime les fichiers dans `music_cache` mais garde tes playlists et téléchargements.</p>
+    </section>
+</div>
+
+<script>
+const clearBtn = document.getElementById("clear-cache");
+if (clearBtn) {
+    clearBtn.onclick = async () => {
+        if (!confirm("Vider tout le cache audio ?")) return;
+        const resp = await fetch("/api/cache/clear", { method: "POST" });
+        const data = await resp.json();
+        if (data.ok) {
+            location.reload();
+        } else {
+            alert("Erreur lors du nettoyage du cache.");
+        }
+    };
+}
+</script>
+</body>
+</html>

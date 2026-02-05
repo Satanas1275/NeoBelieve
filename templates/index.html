@@ -1,128 +1,183 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
-<meta charset="UTF-8">
-<title>NeoBelieve</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta charset="UTF-8">
+    <title>NeoBelieve</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
 <body>
-<div class="container" style="padding-bottom:120px;">
-    <h1>NeoBelieve</h1>
-
-    <!-- 🔍 Recherche -->
-    <div class="search-bar">
-        <input id="search-input" placeholder="Rechercher un titre...">
-        <button id="search-btn">🔍</button>
-    </div>
-    <div id="search-results"></div>
-
-    <!-- ⏮ Playlists CSV -->
-    <h2>Jump Back In (Playlists CSV)</h2>
-    <div class="playlist-list">
-        {% for p in playlists %}
-        <div class="jump-card"
-             onclick="window.location.href='{{ url_for('show_playlist', playlist_name=p.name) }}'">
-            <div class="cover"
-                 {% if p.images and p.images[0].url %}
-                 style="background-image:url('{{ p.images[0].url }}');"
-                 {% endif %}>
+    <div class="container" style="padding-bottom:120px;">
+        <div class="topbar">
+            <div>
+                <h1>NeoBelieve</h1>
+                <p class="subtle">Ton hub musical, partout où tu es.</p>
             </div>
-            <p>{{ p.name }}</p>
-        </div>
-        {% endfor %}
-    </div>
-
-    <!-- 🎶 Derniers joués -->
-<h2>🎶 Derniers joués</h2>
-<div class="playlist-list">
-    {% for r in recent %}
-    <div class="jump-card"
-         onclick='playTrack("{{ r.url }}","{{ r.title }}")'>
-        <div class="cover"
-             style="background-image:url('/cover/{{ r.title }}.jpg');"
-             onerror="this.style.backgroundImage='url({{ url_for('static', filename='default_cover.jpg') }})';">
-        </div>
-        <p>{{ r.title }}</p>
-    </div>
-    {% endfor %}
-
-    {% if recent|length == 0 %}
-    <p style="color:#888;">Aucun titre récemment joué.</p>
-    {% endif %}
-</div>
-
-
-    <!-- 💾 Musiques téléchargées -->
-    <h2>💾 Downloaded Music</h2>
-    <div class="playlist-list">
-        {% for f in downloaded %}
-        <div class="jump-card"
-             onclick='playTrack("{{ f.path }}","{{ f.title }}")'>
-            <div class="cover"
-                 style="background-image:url('/cover/{{ f.title }}.jpg');"
-                 onerror="this.style.backgroundImage='url({{ url_for('static', filename='default_cover.jpg') }})';">
+            <div class="topbar-actions">
+                <button id="devices-open" class="icon-btn" aria-label="Devices" type="button">
+                    <img src="/static/img/devices.png" alt="Devices">
+                </button>
+                <a class="pill-btn ghost" href="{{ url_for('settings') }}">Paramètres</a>
             </div>
-            <p>{{ f.title }}</p>
         </div>
-        {% endfor %}
 
-        {% if downloaded|length == 0 %}
-        <p style="color:#888;">Aucune musique téléchargée.</p>
-        {% endif %}
+        <!-- 🔍 Recherche -->
+        <div class="search-bar">
+            <input id="search-input" placeholder="Rechercher un titre...">
+            <button id="search-btn">🔍</button>
+        </div>
+        <div id="search-results"></div>
+
+        <!-- ⏮ Playlists CSV -->
+        <h2>Jump Back In (Playlists CSV)</h2>
+        <div class="playlist-list">
+            {% for p in playlists %}
+            <div class="jump-card"
+                onclick="window.location.href='{{ url_for('show_playlist', playlist_name=p.name) }}'">
+                <div class="cover" {% if p.images and p.images[0].url %}
+                    style="background-image:url('{{ p.images[0].url }}');" {% endif %}>
+                </div>
+                <p>{{ p.name }}</p>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- 🎶 Derniers joués -->
+        <h2>🎶 Derniers joués</h2>
+        <div class="playlist-list">
+            {% for r in recent %}
+            <div class="jump-card" {% if r.type=='playlist' %}
+                onclick="window.location.href='{{ url_for('show_playlist', playlist_name=r.url) }}'" {% else %}
+                onclick="playTrack('{{ r.url }}','{{ r.title|replace('\'', '\\\'')|replace('"', ' &quot;') }}',true,'{{
+                r.image }}','{{ r.original_url }}')" {% endif %}>
+                <div class="cover" style="background-image:url('{{ r.image or ('/cover/' ~ r.title ~ '.jpg') }}');"
+                    onerror="this.style.backgroundImage='url({{ url_for('static', filename='default_cover.jpg') }})';">
+                </div>
+                <p>{{ r.title }}</p>
+            </div>
+            {% endfor %}
+
+            {% if recent|length == 0 %}
+            <p style="color:#888;">Aucun titre récemment joué.</p>
+            {% endif %}
+        </div>
+
+
+        <!-- 💾 Musiques téléchargées -->
+        <h2>💾 Downloaded Music</h2>
+        <div class="playlist-list">
+            {% for f in downloaded %}
+            <div class="jump-card"
+                onclick='playTrack("{{ f.path }}","{{ f.title }}",true,"{{ f.image }}","{{ f.original_url }}")'>
+                <div class="cover" style="background-image:url('{{ f.image or ('/cover/' ~ f.title ~ '.jpg') }}');"
+                    onerror="this.style.backgroundImage='url({{ url_for('static', filename='default_cover.jpg') }})';">
+                </div>
+                <p>{{ f.title }}</p>
+            </div>
+            {% endfor %}
+
+            {% if downloaded|length == 0 %}
+            <p style="color:#888;">Aucune musique téléchargée.</p>
+            {% endif %}
+        </div>
     </div>
-</div>
 
-<div id="player-bar">
+    <div id="player-bar">
 
-    <!-- Gauche : pochette + infos -->
-    <div class="track-left">
-        <img id="track-cover" src="{{ url_for('static', filename='/img/default_cover.jpg') }}" alt="Cover" onerror="this.src='/static/img/default_cover.jpg'">
-        <div id="track-info">Aucun titre sélectionné</div>
-    </div>
+        <!-- Gauche : pochette + infos -->
+        <div class="track-left">
+            <img id="track-cover" src="{{ url_for('static', filename='/img/default_cover.jpg') }}" alt="Cover"
+                onerror="this.src='/static/img/default_cover.jpg'">
+            <div id="track-info">Aucun titre sélectionné</div>
+        </div>
 
-    <!-- Centre : contrôles principaux -->
-    <div class="controls">
+        <!-- Centre : contrôles principaux -->
         <div class="controls">
-        <button id="shuffle"><img src="/static/img/shuffle.png" alt="Shuffle"></button>
-        <button id="prev"><img src="/static/img/skip_previous.png" alt="Previous"></button>
-        <button id="play"><img src="/static/img/play.png" alt="Play"></button>
-        <button id="next"><img src="/static/img/skip_next.png" alt="Next"></button>
-        <button id="repeat"><img src="/static/img/repeat.png" alt="Repeat"></button>
-        <button id="queue-btn"><img src="/static/img/queued_music.png" alt="Queue"></button>
+            <div class="controls">
+                <button id="shuffle"><img src="/static/img/shuffle.png" alt="Shuffle"></button>
+                <button id="prev"><img src="/static/img/skip_previous.png" alt="Previous"></button>
+                <button id="play"><img src="/static/img/play.png" alt="Play"></button>
+                <button id="next"><img src="/static/img/skip_next.png" alt="Next"></button>
+                <button id="repeat"><img src="/static/img/repeat.png" alt="Repeat"></button>
+                <button id="queue-btn"><img src="/static/img/queued_music.png" alt="Queue"></button>
+            </div>
+
+        </div>
+
+        <!-- Droite : volume -->
+        <div class="volume">
+            <span>🔊</span>
+            <input type="range" id="volume" min="0" max="1" step="0.01" value="1">
+        </div>
+
+        <!-- Barre de progression tout en bas -->
+        <div class="progress-container">
+            <span id="current-time">0:00</span>
+            <input type="range" id="progress" value="0" min="0" max="100" step="0.1">
+            <span id="duration">0:00</span>
+        </div>
+
+        <audio id="audio-player"></audio>
     </div>
 
+    <script src="{{ url_for('static', filename='devices.js') }}"></script>
+    <script src="{{ url_for('static', filename='player.js') }}"></script>
+    <script src="{{ url_for('static', filename='player2.js') }}"></script>
+
+    <!-- Queue Modal -->
+    <div id="queue-modal"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; color:black;">
+        <div style="background:white; margin:10% auto; width:80%; max-width:600px; padding:20px; border-radius:10px;">
+            <h3>File d'attente (Queue)</h3>
+            <input id="add-queue-input" placeholder="Rechercher et ajouter une musique" style="width:70%; padding:5px;">
+            <button id="add-queue-btn" style="padding:5px;">Ajouter</button>
+            <ul id="queue-list" style="list-style:none; padding:0; max-height:300px; overflow-y:auto;"></ul>
+            <button id="close-queue" style="margin-top:10px; padding:5px;">Fermer</button>
+        </div>
     </div>
 
-    <!-- Droite : volume -->
-    <div class="volume">
-        <span>🔊</span>
-        <input type="range" id="volume" min="0" max="1" step="0.01" value="1">
+    <!-- Devices Overlay -->
+    <div id="devices-overlay" class="overlay hidden">
+        <div class="devices-panel">
+            <div class="devices-header">
+                <h3>Devices</h3>
+                <button id="devices-close" class="pill-btn ghost">Fermer</button>
+            </div>
+            <div class="devices-search">
+                <input id="device-input" placeholder="IP:PORT (ex: 192.168.1.50:5000)">
+                <button id="device-scan" class="pill-btn">Ajouter</button>
+            </div>
+            <div id="devices-list" class="devices-list"></div>
+            <div id="device-actions" class="devices-actions hidden">
+                <div class="devices-actions-header">
+                    <strong id="device-name">Appareil</strong>
+                    <span id="device-type" class="status-pill">Type</span>
+                </div>
+
+                <div id="remote-music-info" class="remote-music-info hidden">
+                    <div class="remote-track-title" id="remote-music-title">-</div>
+                    <div class="remote-track-time" id="remote-music-time">--:-- / --:--</div>
+                </div>
+
+                <div id="device-remote" class="devices-remote hidden">
+                    <button data-action="previous" class="pill-btn ghost">Previous</button>
+                    <button data-action="play_pause" class="pill-btn">Play / Pause</button>
+                    <button data-action="next" class="pill-btn ghost">Next</button>
+                </div>
+                <div class="devices-playlist">
+                    <div class="devices-playlist-header">
+                        <span>Playlist distante</span>
+                        <div class="devices-playlist-actions">
+                            <button id="remote-add-current" class="pill-btn">Ajouter le titre actuel</button>
+                            <button id="remote-refresh" class="pill-btn ghost">Rafraîchir</button>
+                        </div>
+                    </div>
+                    <div id="remote-playlist" class="remote-playlist"></div>
+                </div>
+            </div>
+        </div>
     </div>
-
-    <!-- Barre de progression tout en bas -->
-    <div class="progress-container">
-        <span id="current-time">0:00</span>
-        <input type="range" id="progress" value="0" min="0" max="100" step="0.1">
-        <span id="duration">0:00</span>
-    </div>
-
-    <audio id="audio-player"></audio>
-</div>
-
-
-<script src="{{ url_for('static', filename='player.js') }}"></script>
-<script src="{{ url_for('static', filename='player2.js') }}"></script>
-
-<!-- Queue Modal -->
-<div id="queue-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; color:black;">
-    <div style="background:white; margin:10% auto; width:80%; max-width:600px; padding:20px; border-radius:10px;">
-        <h3>File d'attente (Queue)</h3>
-        <input id="add-queue-input" placeholder="Rechercher et ajouter une musique" style="width:70%; padding:5px;">
-        <button id="add-queue-btn" style="padding:5px;">Ajouter</button>
-        <ul id="queue-list" style="list-style:none; padding:0; max-height:300px; overflow-y:auto;"></ul>
-        <button id="close-queue" style="margin-top:10px; padding:5px;">Fermer</button>
-    </div>
-</div>
 </body>
+
 </html>

@@ -23,9 +23,18 @@ window.repeatMode = 0; // 0: off, 1: single track, 2: playlist
 window.shuffle = false;
 
 playBtn.onclick = () => {
+    if (window.activeDevice) {
+        sendRemoteAction("play_pause");
+        // Optimistically update icon? 
+        // We rely on polling for the icon state, but instant feedback is nice.
+        // Let's toggle it optimistically or just wait for poll. 
+        // Wait for poll is safer.
+        return;
+    }
     if (audio.paused) audio.play();
     else audio.pause();
 };
+
 
 audio.onplay = () => { playImg.src = "/static/img/pause.png"; isPlaying = true; };
 audio.onpause = () => { playImg.src = "/static/img/play.png"; isPlaying = false; };
@@ -50,17 +59,19 @@ audio.onended = () => {
 };
 
 audio.ontimeupdate = () => {
+    if (window.activeDevice) return; // Let remote sync handle UI
     progress.value = (audio.currentTime / audio.duration) * 100 || 0;
     currentTimeEl.textContent = formatTime(audio.currentTime);
     durationEl.textContent = formatTime(audio.duration);
 };
 
+
 progress.oninput = () => {
     audio.currentTime = (progress.value / 100) * audio.duration;
 };
 
-volume.oninput = () => { 
-    audio.volume = volume.value; 
+volume.oninput = () => {
+    audio.volume = volume.value;
     localStorage.setItem("volume", volume.value);
 };
 
@@ -85,6 +96,10 @@ document.getElementById("shuffle").onclick = () => {
 
 if (nextBtn) {
     nextBtn.onclick = () => {
+        if (window.activeDevice) {
+            sendRemoteAction("next");
+            return;
+        }
         if (window.queue.length > 0) {
             window.currentQueueIndex = (window.currentQueueIndex + 1) % window.queue.length;
             localStorage.setItem('currentQueueIndex', window.currentQueueIndex);
@@ -95,6 +110,10 @@ if (nextBtn) {
 
 if (prevBtn) {
     prevBtn.onclick = () => {
+        if (window.activeDevice) {
+            sendRemoteAction("previous");
+            return;
+        }
         if (window.queue.length > 0) {
             window.currentQueueIndex = (window.currentQueueIndex - 1 + window.queue.length) % window.queue.length;
             localStorage.setItem('currentQueueIndex', window.currentQueueIndex);
@@ -102,6 +121,7 @@ if (prevBtn) {
         }
     };
 }
+
 
 if (queueBtn) {
     queueBtn.onclick = () => {
@@ -196,17 +216,29 @@ function updateQueueDisplay() {
 }
 
 // Récupération du track depuis le localStorage
-let currentTrack = localStorage.getItem("currentTrack"); 
+let currentTrack = localStorage.getItem("currentTrack");
+let currentTitle = localStorage.getItem("currentTitle");
+let currentImage = localStorage.getItem("currentImage");
+
 if (currentTrack) {
-    // Extract filename from path
-    let pathParts = currentTrack.split('/');
-    let filename = pathParts[pathParts.length - 1];
-    let trackName = filename.replace('.mp3', '');
-    let displayName = decodeURIComponent(trackName);
+    let displayName = currentTitle;
+
+    if (!displayName) {
+        // Fallback: Extract filename from path if title not saved
+        let pathParts = currentTrack.split('/');
+        let filename = pathParts[pathParts.length - 1];
+        let trackName = filename.replace('.mp3', '');
+        displayName = decodeURIComponent(trackName);
+
+        // Try to remove ID suffix if present (loose regex)
+        // e.g. "Title-NTpbbQUBbuo" -> "Title"
+        // Also handle UUIDs (36 chars) for migrated files
+        displayName = displayName.replace(/-([a-zA-Z0-9_-]{11}|[a-f0-9-]{36})$/, "");
+    }
 
     // Mettre à jour le track info et le cover
-    trackInfo.textContent = displayName;
-    trackCover.src = `/cover/${displayName}.jpg`;
+    trackInfo.textContent = displayName || "Unknown";
+    trackCover.src = currentImage || `/cover/${encodeURIComponent(displayName)}.jpg`;
 
     // Charger le morceau dans le player
     audio.src = currentTrack;
@@ -220,7 +252,30 @@ function formatTime(sec) {
 }
 
 // Appel pour lancer une musique
-function startAudio(path, title, coverUrl) {
+async function startAudio(path, title, coverUrl, original_url = "") {
+    if (window.activeDevice) {
+        // Send remote play command
+        try {
+            await fetch(`http://${window.activeDevice.host}/api/remote/play`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    url: path,
+                    title: title,
+                    image: coverUrl,
+                    original_url: original_url
+                })
+            });
+            // Update local info optimistically?
+            trackInfo.textContent = title + " (Remote)";
+        } catch (e) {
+            console.error("Remote play failed", e);
+            alert("Erreur de lecture à distance");
+        }
+        return;
+    }
+
+    // Normal local play
     audio.src = path;
     trackInfo.textContent = title;
     trackCover.src = coverUrl || "/static/img/default_cover.jpg";
