@@ -98,6 +98,30 @@ def _hash_url(url):
     return hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
 
 
+def _yt_video_id(url):
+    if not url:
+        return None
+    match = re.search(r"[?&]v=([^&]+)", url)
+    if match:
+        return match.group(1)
+    match = re.search(r"youtu\.be/([^?&/]+)", url)
+    if match:
+        return match.group(1)
+    match = re.search(r"youtube\.com/shorts/([^?&/]+)", url)
+    if match:
+        return match.group(1)
+    match = re.search(r"youtube\.com/embed/([^?&/]+)", url)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _yt_cover_url(video_id):
+    if not video_id:
+        return None
+    return f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+
+
 def _get_online_mode():
     settings = _load_json(SETTINGS_JSON, {})
     if os.getenv("OFFLINE") == "1":
@@ -225,13 +249,15 @@ def _is_bad_thumb(url):
     global BAD_THUMB_HASH
     if not url:
         return False
+    if url == BAD_THUMB_URL:
+        return True
     if BAD_THUMB_HASH is None:
         BAD_THUMB_HASH = _get_thumb_hash(BAD_THUMB_URL)
         if BAD_THUMB_HASH is None:
-            return url == BAD_THUMB_URL
+            return False
     h = _get_thumb_hash(url)
     if h is None:
-        return url == BAD_THUMB_URL
+        return False
     return _hamming(h, BAD_THUMB_HASH) <= BAD_THUMB_MAX_DIST
 
 
@@ -282,7 +308,7 @@ def _yt_dlp_search(query, limit=10):
         "noplaylist": False,
         "extractor_args": {"youtube": {"player_client": ["android"]}},
     }
-    search = f"ytsearch{limit}:{query}"
+    search = f"https://music.youtube.com/search?q={quote(query)}"
     def _do_search():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(search, download=False)
@@ -344,16 +370,21 @@ def api_search():
         return jsonify({"ok": False, "error": error or "no results"}), 500
     items = []
     for entry in entries:
+        if entry.get("_type") in {"channel", "playlist"}:
+            continue
         title = entry.get("title") or ""
         uploader = entry.get("uploader") or entry.get("artist") or entry.get("creator") or ""
         url = entry.get("webpage_url") or entry.get("url")
         if url and not url.startswith("http"):
             url = f"https://www.youtube.com/watch?v={url}"
-        thumb = entry.get("thumbnail")
+        if url and not url.startswith("http"):
+            url = f"https://music.youtube.com/watch?v={url}"
+        if url and ("/channel/" in url or "/@" in url) and "watch?v=" not in url:
+            continue
+        video_id = entry.get("id") or _yt_video_id(url)
+        thumb = _yt_cover_url(video_id)
         if not url:
             continue
-        if not thumb and entry.get("id"):
-            thumb = f"https://i.ytimg.com/vi/{entry.get('id')}/hqdefault.jpg"
         if _is_bad_thumb(thumb):
             thumb = None
         items.append(
@@ -375,6 +406,10 @@ def api_cache_play():
     title = payload.get("title") or "Track"
     artist = payload.get("artist") or ""
     cover_url = payload.get("cover")
+    if not cover_url:
+        cover_url = _yt_cover_url(_yt_video_id(url))
+    if _is_bad_thumb(cover_url):
+        cover_url = None
     if not url:
         return jsonify({"ok": False, "error": "missing url"}), 400
 
@@ -437,6 +472,10 @@ def api_cache_prefetch():
             title = item.get("title") or "Track"
             artist = item.get("artist") or ""
             cover_url = item.get("cover")
+            if not cover_url:
+                cover_url = _yt_cover_url(_yt_video_id(url))
+            if _is_bad_thumb(cover_url):
+                cover_url = None
             if not url:
                 continue
             key = _cache_key(url, title)
@@ -491,6 +530,10 @@ def api_download():
     title = payload.get("title") or "Track"
     artist = payload.get("artist") or ""
     cover_url = payload.get("cover")
+    if not cover_url:
+        cover_url = _yt_cover_url(_yt_video_id(url))
+    if _is_bad_thumb(cover_url):
+        cover_url = None
     if not url:
         return jsonify({"ok": False, "error": "missing url"}), 400
 
