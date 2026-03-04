@@ -8,7 +8,7 @@ from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from collections import deque
 from datetime import datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, parse_qs
 
 from flask import Flask, jsonify, request, send_file, render_template
 from PIL import Image, ImageOps
@@ -22,6 +22,11 @@ try:
     import syncedlyrics
 except Exception:
     syncedlyrics = None
+
+try:
+    from ytmusicapi import YTMusic
+except Exception:
+    YTMusic = None
 
 APP_NAME = "NeoBelieve"
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -48,6 +53,10 @@ BAD_THUMB_MAX_DIST = 6
 THUMB_HASH_SIZE = 8
 thumb_hash_cache = {}
 thumb_hash_lock = threading.Lock()
+search_metadata_cache = {}
+search_metadata_lock = threading.Lock()
+ytmusic_client = None
+ytmusic_client_lock = threading.Lock()
 
 os.makedirs(DB_DIR, exist_ok=True)
 
@@ -69,6 +78,21 @@ current_volume = {"volume": 80}
 
 remote_lock = threading.Lock()
 remote_queue = deque()
+
+
+class _YTDLPLogger:
+    def __init__(self):
+        self.errors = []
+
+    def debug(self, msg):
+        return None
+
+    def warning(self, msg):
+        return None
+
+    def error(self, msg):
+        if msg:
+            self.errors.append(str(msg))
 
 
 def _load_json(path, default):
@@ -264,11 +288,13 @@ def _is_bad_thumb(url):
 def _yt_dlp_info(url, download=False, outtmpl=None):
     if yt_dlp is None:
         return None, "yt-dlp not installed"
+    logger = _YTDLPLogger()
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
         "extract_flat": False,
         "noplaylist": True,
+        "logger": logger,
     }
     if download:
         ydl_opts.update(
@@ -289,7 +315,465 @@ def _yt_dlp_info(url, download=False, outtmpl=None):
             info = ydl.extract_info(url, download=download)
         return info, None
     except Exception as e:
-        return None, str(e)
+        details = str(e)
+        if logger.errors:
+            details = " | ".join(logger.errors + [details])
+        return None, _friendly_ytdlp_error(details)
+
+
+def _friendly_ytdlp_error(error):
+    if not error:
+        return "yt-dlp error"
+    raw = str(error).strip()
+    raw = re.sub(r"\s+", " ", raw)
+    raw = re.sub(r"^ERROR:\s*", "", raw, flags=re.IGNORECASE)
+    lower = raw.lower()
+
+    if "this video is restricted" in lower or "google workspace administrator" in lower or "workspace administrator" in lower or "network administrator restrictions" in lower:
+        return "Video restreinte par Google Workspace ou le réseau (administrateur). Essaie un autre compte/réseau."
+    if "private video" in lower:
+        return "Vidéo privée."
+    if "this video is unavailable" in lower or "video unavailable" in lower:
+        return "Vidéo indisponible."
+    if "copyright" in lower and "blocked" in lower:
+        return "Vidéo bloquée pour droits d'auteur."
+    if "sign in to confirm your age" in lower:
+        return "Vidéo avec limite d'âge (connexion requise)."
+    if "not available in your country" in lower:
+        return "Vidéo non disponible dans ce pays."
+
+    return raw
+
+
+def _parse_types_filter(types_filter, default_types=None):
+    all_types = {"artist", "playlist", "track"}
+    if not types_filter:
+        return set(default_types or all_types)
+
+    normalized = (
+        types_filter.lower()
+        .replace("+", " ")
+        .replace(",", " ")
+        .replace("/", " ")
+        .replace("&", " ")
+    )
+    tokens = normalized.split()
+    allowed = set()
+    aliases = {
+        "artist": "artist",
+        "artists": "artist",
+        "artiste": "artist",
+        "artistes": "artist",
+        "playlist": "playlist",
+        "playlists": "playlist",
+        "liste": "playlist",
+        "listes": "playlist",
+        "track": "track",
+        "tracks": "track",
+        "song": "track",
+        "songs": "track",
+        "titre": "track",
+        "titres": "track",
+        "morceau": "track",
+        "morceaux": "track",
+        "et": None,
+        "and": None,
+        "tout": "all",
+        "tous": "all",
+        "all": "all",
+        "*": "all",
+    }
+    for token in tokens:
+        mapped = aliases.get(token)
+        if mapped == "all":
+            return all_types
+        if mapped in all_types:
+            allowed.add(mapped)
+    return allowed or set(default_types or all_types)
+
+
+def _normalize_music_url(url):
+    if not url:
+        return None
+    if url.startswith("http"):
+        return url
+    if url.startswith("/watch"):
+        return f"https://music.youtube.com{url}"
+    if url.startswith("/browse"):
+        return f"https://music.youtube.com{url}"
+    if re.fullmatch(r"[A-Za-z0-9_-]{11}", url):
+        return f"https://music.youtube.com/watch?v={url}"
+    return url
+
+
+def _classify_music_url(url):
+    if not url:
+        return None
+    normalized = _normalize_music_url(url)
+    parsed = urlparse(normalized)
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if len(path_parts) >= 2 and path_parts[0] == "browse":
+        browse_id = path_parts[1]
+        if len(browse_id) == 24:
+            return "artist"
+        if len(browse_id) == 17:
+            return "playlist"
+        if browse_id.startswith("VL") or browse_id.startswith("MPSP") or browse_id.startswith("MPRE"):
+            return "playlist"
+        return "browse_other"
+    if parsed.path == "/watch":
+        return "track"
+    if parsed.path.startswith("/channel/") or parsed.path.startswith("/@"):
+        return "artist"
+    if parsed.path == "/playlist":
+        return "playlist"
+    return "other"
+
+
+def _classify_entry(entry, url):
+    entry_type = _classify_music_url(url)
+    if entry_type in {"artist", "playlist", "track"}:
+        return entry_type
+
+    raw_type = (entry.get("_type") or "").lower()
+    entry_id = entry.get("id") or ""
+    if raw_type == "channel":
+        return "artist"
+    if raw_type == "playlist":
+        return "playlist"
+    if entry_id.startswith("UC") and len(entry_id) == 24:
+        return "artist"
+    if entry_id.startswith("VL") or entry_id.startswith("MPRE") or entry_id.startswith("MPSP"):
+        return "playlist"
+    if re.fullmatch(r"[A-Za-z0-9_-]{11}", entry_id):
+        return "track"
+    return entry_type
+
+
+def _pick_best_thumbnail(thumbnails):
+    if not thumbnails:
+        return None
+    return max(
+        thumbnails,
+        key=lambda t: (t.get("width", 0) * t.get("height", 0), t.get("width", 0)),
+    )
+
+
+def _extract_cover_from_entry(entry, entry_type=None, video_id=None):
+    thumb = entry.get("thumbnail")
+    if thumb and not _is_bad_thumb(thumb):
+        return thumb
+    thumbs = entry.get("thumbnails") or []
+    best = _pick_best_thumbnail(thumbs)
+    if best:
+        best_url = best.get("url")
+        if best_url and not _is_bad_thumb(best_url):
+            return best_url
+    if entry_type == "track":
+        fallback = _yt_cover_url(video_id)
+        if fallback and not _is_bad_thumb(fallback):
+            return fallback
+    return None
+
+
+def _get_ytmusic_client():
+    global ytmusic_client
+    if YTMusic is None:
+        return None
+    with ytmusic_client_lock:
+        if ytmusic_client is None:
+            try:
+                ytmusic_client = YTMusic()
+            except Exception:
+                ytmusic_client = None
+        return ytmusic_client
+
+
+def _resolve_browse_metadata(entry_id, entry_type):
+    if not entry_id or entry_type not in {"artist", "playlist"}:
+        return {}
+
+    cache_key = (entry_type, entry_id)
+    with search_metadata_lock:
+        if cache_key in search_metadata_cache:
+            return search_metadata_cache[cache_key]
+
+    ytmusic = _get_ytmusic_client()
+    if ytmusic is None:
+        return {}
+
+    resolved = {}
+    try:
+        if entry_type == "artist":
+            artist = ytmusic.get_artist(entry_id)
+            resolved["title"] = artist.get("name")
+            resolved["uploader"] = artist.get("name")
+            best = _pick_best_thumbnail(artist.get("thumbnails"))
+            if best:
+                resolved["cover"] = best.get("url")
+        elif entry_type == "playlist":
+            if entry_id.startswith("MPRE"):
+                album = ytmusic.get_album(entry_id)
+                resolved["title"] = album.get("title")
+                artists = album.get("artists") or []
+                if artists:
+                    resolved["uploader"] = ", ".join(a.get("name") for a in artists if a.get("name"))
+                best = _pick_best_thumbnail(album.get("thumbnails"))
+                if best:
+                    resolved["cover"] = best.get("url")
+            else:
+                playlist = ytmusic.get_playlist(entry_id, limit=1)
+                resolved["title"] = playlist.get("title")
+                resolved["uploader"] = playlist.get("author")
+                best = _pick_best_thumbnail(playlist.get("thumbnails"))
+                if best:
+                    resolved["cover"] = best.get("url")
+    except Exception:
+        resolved = {}
+
+    with search_metadata_lock:
+        search_metadata_cache[cache_key] = resolved
+    return resolved
+
+
+def _resolve_track_metadata(video_id):
+    if not video_id:
+        return {}
+
+    cache_key = ("track", video_id)
+    with search_metadata_lock:
+        if cache_key in search_metadata_cache:
+            return search_metadata_cache[cache_key]
+
+    ytmusic = _get_ytmusic_client()
+    if ytmusic is None:
+        return {}
+
+    resolved = {}
+    try:
+        song = ytmusic.get_song(video_id)
+        details = song.get("videoDetails") or {}
+        if details.get("title"):
+            resolved["title"] = details.get("title")
+        artist = details.get("author") or details.get("channelName")
+        if artist:
+            resolved["uploader"] = artist
+        thumbs = ((details.get("thumbnail") or {}).get("thumbnails")) or []
+        best = _pick_best_thumbnail(thumbs)
+        if best:
+            resolved["cover"] = best.get("url")
+    except Exception:
+        resolved = {}
+
+    with search_metadata_lock:
+        search_metadata_cache[cache_key] = resolved
+    return resolved
+
+
+def _iter_search_entries(entries):
+    for entry in entries or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("_type") == "playlist" and entry.get("entries"):
+            for sub in _iter_search_entries(entry.get("entries")):
+                yield sub
+            continue
+        yield entry
+
+
+def _entry_to_search_item(entry, include_types):
+    raw_url = entry.get("webpage_url") or entry.get("url")
+    url = _normalize_music_url(raw_url)
+    entry_type = _classify_entry(entry, url)
+
+    if entry_type not in include_types:
+        return None
+
+    raw_id = entry.get("id")
+    parsed = urlparse(url or "")
+    query = parse_qs(parsed.query)
+    path_parts = [part for part in parsed.path.split("/") if part]
+    browse_id = None
+    if len(path_parts) >= 2 and path_parts[0] == "browse":
+        browse_id = path_parts[1]
+    if not browse_id and entry_type in {"artist", "playlist"}:
+        browse_id = raw_id
+
+    video_id = None
+    if entry_type == "track":
+        video_id = query.get("v", [None])[0] or _yt_video_id(url)
+        if not video_id and raw_id and re.fullmatch(r"[A-Za-z0-9_-]{11}", raw_id):
+            video_id = raw_id
+
+    title = entry.get("title") or ""
+    uploader = entry.get("uploader") or entry.get("artist") or entry.get("creator") or ""
+    cover = _extract_cover_from_entry(entry, entry_type=entry_type, video_id=video_id)
+
+    if entry_type in {"artist", "playlist"} and browse_id:
+        resolved = _resolve_browse_metadata(browse_id, entry_type)
+        if not title:
+            title = resolved.get("title") or title
+        if not uploader:
+            uploader = resolved.get("uploader") or uploader
+        if not cover:
+            cover = resolved.get("cover")
+    elif entry_type == "track" and video_id:
+        resolved = _resolve_track_metadata(video_id)
+        if not title:
+            title = resolved.get("title") or title
+        if not uploader:
+            uploader = resolved.get("uploader") or uploader
+        if not cover:
+            cover = resolved.get("cover")
+
+    if not uploader and title and " - " in title:
+        # Fallback léger quand yt-dlp/ytmusic ne donnent pas d'artiste.
+        uploader = title.split(" - ", 1)[0].strip()
+
+    if not url:
+        if entry_type in {"artist", "playlist"} and browse_id:
+            url = f"https://music.youtube.com/browse/{browse_id}"
+        elif entry_type == "track" and video_id:
+            url = f"https://music.youtube.com/watch?v={video_id}"
+
+    if not title:
+        title = f"{entry_type}:{browse_id or video_id or _hash_url(url or 'fallback')}"
+    if not url:
+        return None
+
+    return {
+        "id": browse_id or video_id or raw_id or _hash_url(url),
+        "title": title,
+        "artist": uploader,
+        "url": url,
+        "cover": cover,
+        "type": entry_type,
+    }
+
+
+def _track_item(video_id, title, artist, cover=None):
+    if not video_id or not title:
+        return None
+    url = f"https://music.youtube.com/watch?v={video_id}"
+    if cover and _is_bad_thumb(cover):
+        cover = None
+    if not cover:
+        fallback = _yt_cover_url(video_id)
+        cover = None if _is_bad_thumb(fallback) else fallback
+    return {
+        "id": video_id,
+        "title": title,
+        "artist": artist or "",
+        "url": url,
+        "cover": cover,
+        "type": "track",
+    }
+
+
+def _resolve_playlist_tracks(entry_id, limit=12):
+    ytmusic = _get_ytmusic_client()
+    if ytmusic is None:
+        return None, "ytmusicapi not installed or unavailable"
+
+    items = []
+    try:
+        if entry_id.startswith("MPRE"):
+            album = ytmusic.get_album(entry_id)
+            album_title = album.get("title") or ""
+            album_artists = album.get("artists") or []
+            default_artist = ", ".join(a.get("name") for a in album_artists if a.get("name"))
+            for track in (album.get("tracks") or [])[:limit]:
+                video_id = track.get("videoId")
+                title = track.get("title")
+                artists = track.get("artists") or []
+                artist = ", ".join(a.get("name") for a in artists if a.get("name")) or default_artist
+                thumbs = track.get("thumbnails") or album.get("thumbnails") or []
+                best = _pick_best_thumbnail(thumbs)
+                item = _track_item(video_id, title, artist, cover=best.get("url") if best else None)
+                if item:
+                    if not item.get("artist"):
+                        item["artist"] = album_title
+                    items.append(item)
+        else:
+            playlist_id = entry_id[2:] if entry_id.startswith("VL") else entry_id
+            playlist = ytmusic.get_playlist(playlist_id, limit=limit)
+            playlist_author = playlist.get("author") or ""
+            playlist_thumbs = playlist.get("thumbnails") or []
+            for track in (playlist.get("tracks") or [])[:limit]:
+                video_id = track.get("videoId")
+                title = track.get("title")
+                artists = track.get("artists") or []
+                artist = ", ".join(a.get("name") for a in artists if a.get("name")) or playlist_author
+                thumbs = track.get("thumbnails") or playlist_thumbs
+                best = _pick_best_thumbnail(thumbs)
+                item = _track_item(video_id, title, artist, cover=best.get("url") if best else None)
+                if item:
+                    items.append(item)
+    except Exception as e:
+        return None, _friendly_ytdlp_error(str(e))
+    return items, None
+
+
+def _resolve_artist_tracks(entry_id, fallback_title="", limit=12):
+    ytmusic = _get_ytmusic_client()
+    if ytmusic is None:
+        return None, "ytmusicapi not installed or unavailable"
+
+    items = []
+    try:
+        artist = ytmusic.get_artist(entry_id)
+        artist_name = artist.get("name") or fallback_title or ""
+
+        # Prend d'abord les titres "Top songs" si disponibles.
+        for track in ((artist.get("songs") or {}).get("results") or []):
+            video_id = track.get("videoId")
+            title = track.get("title")
+            artists = track.get("artists") or []
+            track_artist = ", ".join(a.get("name") for a in artists if a.get("name")) or artist_name
+            thumbs = track.get("thumbnails") or artist.get("thumbnails") or []
+            best = _pick_best_thumbnail(thumbs)
+            item = _track_item(video_id, title, track_artist, cover=best.get("url") if best else None)
+            if item:
+                items.append(item)
+            if len(items) >= limit:
+                break
+
+        if len(items) < limit and artist_name:
+            extra = ytmusic.search(artist_name, filter="songs", limit=limit * 2)
+            seen = {it["id"] for it in items}
+            for track in extra:
+                video_id = track.get("videoId")
+                title = track.get("title")
+                artists = track.get("artists") or []
+                track_artist = ", ".join(a.get("name") for a in artists if a.get("name"))
+                if video_id in seen:
+                    continue
+                if artist_name and track_artist and artist_name.lower() not in track_artist.lower():
+                    continue
+                thumbs = track.get("thumbnails") or []
+                best = _pick_best_thumbnail(thumbs)
+                item = _track_item(video_id, title, track_artist or artist_name, cover=best.get("url") if best else None)
+                if item:
+                    items.append(item)
+                    seen.add(item["id"])
+                if len(items) >= limit:
+                    break
+    except Exception as e:
+        return None, _friendly_ytdlp_error(str(e))
+    return items, None
+
+
+def _unique_playlist_name(playlists, base_name):
+    base = (base_name or "Playlist").strip() or "Playlist"
+    existing = {p.get("name") for p in playlists}
+    if base not in existing:
+        return base
+    i = 2
+    while True:
+        candidate = f"{base} ({i})"
+        if candidate not in existing:
+            return candidate
+        i += 1
 
 
 def _yt_dlp_search(query, limit=10):
@@ -365,37 +849,46 @@ def api_search():
     q = request.args.get("q") or ""
     if not q:
         return jsonify({"ok": False, "error": "missing q"}), 400
+    include_types = _parse_types_filter(request.args.get("types"), default_types={"track", "artist"})
     entries, error = _yt_dlp_search(q, limit=12)
-    if not entries:
-        return jsonify({"ok": False, "error": error or "no results"}), 500
+    if entries is None:
+        return jsonify({"ok": False, "error": error or "search failed"}), 500
     items = []
-    for entry in entries:
-        if entry.get("_type") in {"channel", "playlist"}:
+    seen = set()
+    for entry in _iter_search_entries(entries):
+        item = _entry_to_search_item(entry, include_types=include_types)
+        if not item:
             continue
-        title = entry.get("title") or ""
-        uploader = entry.get("uploader") or entry.get("artist") or entry.get("creator") or ""
-        url = entry.get("webpage_url") or entry.get("url")
-        if url and not url.startswith("http"):
-            url = f"https://www.youtube.com/watch?v={url}"
-        if url and not url.startswith("http"):
-            url = f"https://music.youtube.com/watch?v={url}"
-        if url and ("/channel/" in url or "/@" in url) and "watch?v=" not in url:
+        dedupe_key = (item.get("type"), item.get("id"), item.get("url"))
+        if dedupe_key in seen:
             continue
-        video_id = entry.get("id") or _yt_video_id(url)
-        thumb = _yt_cover_url(video_id)
-        if not url:
-            continue
-        if _is_bad_thumb(thumb):
-            thumb = None
-        items.append(
-            {
-                "id": entry.get("id") or _hash_url(url),
-                "title": title,
-                "artist": uploader,
-                "url": url,
-                "cover": thumb,
-            }
-        )
+        seen.add(dedupe_key)
+        items.append(item)
+        if len(items) >= 12:
+            break
+    return jsonify({"ok": True, "items": items})
+
+
+@app.route("/api/search/expand")
+def api_search_expand():
+    if not _get_online_mode():
+        return jsonify({"ok": False, "error": "offline"}), 400
+
+    entry_type = (request.args.get("type") or "").strip().lower()
+    entry_id = (request.args.get("id") or "").strip()
+    title = (request.args.get("title") or "").strip()
+    if entry_type not in {"artist", "playlist"}:
+        return jsonify({"ok": False, "error": "type must be artist or playlist"}), 400
+    if not entry_id:
+        return jsonify({"ok": False, "error": "missing id"}), 400
+
+    if entry_type == "artist":
+        items, error = _resolve_artist_tracks(entry_id, fallback_title=title, limit=12)
+    else:
+        items, error = _resolve_playlist_tracks(entry_id, limit=12)
+
+    if items is None:
+        return jsonify({"ok": False, "error": error or "expand failed"}), 500
     return jsonify({"ok": True, "items": items})
 
 
@@ -540,26 +1033,26 @@ def api_download():
     safe_title = _safe_title(title)
     path = _download_path(title)
 
-    def _run():
-        with download_lock:
-            _yt_dlp_info(url, download=True, outtmpl=os.path.join(MUSIC_DIR, f"{safe_title}.%(ext)s"))
-        key = _cache_key(url, title)
-        if cover_url:
-            _save_cover_from_url(cover_url, key)
-        entry = {
-            "id": key,
-            "title": title,
-            "artist": artist,
-            "url": url,
-            "path": path,
-            "cover_path": _cover_path(key) if os.path.exists(_cover_path(key)) else None,
-            "downloaded": True,
-            "downloaded_at": int(time.time()),
-        }
-        _add_download_entry(entry)
-        _touch_cache_entry(key, dict(entry, last_played=time.time()))
+    with download_lock:
+        info, error = _yt_dlp_info(url, download=True, outtmpl=os.path.join(MUSIC_DIR, f"{safe_title}.%(ext)s"))
+    if not info:
+        return jsonify({"ok": False, "error": error or "download failed"}), 500
 
-    threading.Thread(target=_run, daemon=True).start()
+    key = _cache_key(url, title)
+    if cover_url:
+        _save_cover_from_url(cover_url, key)
+    entry = {
+        "id": key,
+        "title": title,
+        "artist": artist,
+        "url": url,
+        "path": path,
+        "cover_path": _cover_path(key) if os.path.exists(_cover_path(key)) else None,
+        "downloaded": True,
+        "downloaded_at": int(time.time()),
+    }
+    _add_download_entry(entry)
+    _touch_cache_entry(key, dict(entry, last_played=time.time()))
     return jsonify({"ok": True, "id": safe_title})
 
 
@@ -638,6 +1131,27 @@ def api_playlists_add():
             break
     _save_json(PLAYLIST_JSON, playlists)
     return jsonify({"ok": True})
+
+
+@app.route("/api/playlists/import", methods=["POST"])
+def api_playlists_import():
+    payload = request.get_json(silent=True) or {}
+    entry_id = (payload.get("id") or "").strip()
+    title = (payload.get("title") or "").strip() or "Playlist"
+    if not entry_id:
+        return jsonify({"ok": False, "error": "missing id"}), 400
+
+    items, error = _resolve_playlist_tracks(entry_id, limit=100)
+    if items is None:
+        return jsonify({"ok": False, "error": error or "import failed"}), 500
+    if not items:
+        return jsonify({"ok": False, "error": "empty playlist"}), 400
+
+    playlists = _load_json(PLAYLIST_JSON, [])
+    final_name = _unique_playlist_name(playlists, title)
+    playlists.append({"name": final_name, "items": items})
+    _save_json(PLAYLIST_JSON, playlists)
+    return jsonify({"ok": True, "name": final_name, "count": len(items)})
 
 
 @app.route("/api/playlists/remove", methods=["POST"])

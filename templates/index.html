@@ -13,7 +13,7 @@
         <h1>NeoBelieve</h1>
         <p>Le futur de la musique, gratuite et sans pub.</p>
       </div>
-      <button class="chip" id="devices-btn">Devices</button>
+      <button class="chip icon-btn chip-icon" id="devices-btn" aria-label="Devices"></button>
     </header>
 
     <section class="panel">
@@ -23,6 +23,24 @@
           <input id="search-input" type="text" placeholder="Chercher un titre, un artiste..." />
           <button id="search-btn">Search</button>
         </div>
+      </div>
+      <div class="search-filters">
+        <label class="search-filter">
+          <input id="filter-track" type="checkbox" checked />
+          <span>Titres</span>
+        </label>
+        <label class="search-filter">
+          <input id="filter-artist" type="checkbox" checked />
+          <span>Artistes</span>
+        </label>
+        <label class="search-filter">
+          <input id="filter-playlist" type="checkbox" />
+          <span>Playlists</span>
+        </label>
+      </div>
+      <div id="search-context" class="search-context hidden">
+        <button id="search-back-btn" type="button">Retour</button>
+        <span id="search-context-label"></span>
       </div>
       <div id="search-results" class="list"></div>
     </section>
@@ -87,11 +105,11 @@
           </div>
         </div>
         <div class="controls">
-          <button id="prev-btn" class="secondary">Prev</button>
-          <button id="play-btn">Play</button>
-          <button id="next-btn" class="secondary">Next</button>
-          <button id="shuffle-btn" class="secondary">Shuffle</button>
-          <button id="loop-btn" class="secondary">Loop</button>
+          <button id="prev-btn" class="secondary icon-btn" aria-label="Précédent"></button>
+          <button id="play-btn" class="icon-btn" aria-label="Play"></button>
+          <button id="next-btn" class="secondary icon-btn" aria-label="Suivant"></button>
+          <button id="shuffle-btn" class="secondary icon-btn" aria-label="Shuffle"></button>
+          <button id="loop-btn" class="secondary icon-btn" aria-label="Repeat"></button>
           <button id="download-btn" class="secondary">Download</button>
           <button id="lyrics-toggle" class="secondary">Lyrics</button>
           <div class="volume-control">
@@ -152,11 +170,11 @@
       <div id="track-info">Aucune lecture</div>
     </div>
     <div class="controls">
-      <button id="bar-prev">⟲</button>
-      <button id="bar-play">▶</button>
-      <button id="bar-next">⟳</button>
+      <button id="bar-prev" class="icon-btn" aria-label="Précédent"></button>
+      <button id="bar-play" class="icon-btn" aria-label="Play"></button>
+      <button id="bar-next" class="icon-btn" aria-label="Suivant"></button>
       <button id="bar-download">↓</button>
-      <button id="bar-queue">Queue</button>
+      <button id="bar-queue" class="icon-btn" aria-label="Queue"></button>
     </div>
     <div class="volume">
       <span id="bar-vol">80</span>
@@ -170,6 +188,7 @@
   </div>
 
   <audio id="audio"></audio>
+  <div id="toast-stack" aria-live="polite" aria-atomic="true"></div>
   <script src="/static/app.js"></script>
 </body>
 </html>
