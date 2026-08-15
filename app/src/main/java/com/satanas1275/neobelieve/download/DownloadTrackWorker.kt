@@ -59,7 +59,7 @@ class DownloadTrackWorker(
         private const val KEY_DURATION = "duration"
         private const val KEY_THUMBNAIL = "thumbnail"
 
-        fun enqueue(context: Context, track: Track) {
+        fun enqueue(context: Context, track: Track): String {
             val data = workDataOf(
                 KEY_TRACK_ID to track.id,
                 KEY_TITLE to track.title,
@@ -70,11 +70,13 @@ class DownloadTrackWorker(
             val request = OneTimeWorkRequestBuilder<DownloadTrackWorker>()
                 .setInputData(data)
                 .build()
+            val workName = "download_${track.id}"
             WorkManager.getInstance(context).enqueueUniqueWork(
-                "download_${track.id}",
+                workName,
                 androidx.work.ExistingWorkPolicy.KEEP,
                 request,
             )
+            return workName
         }
     }
 }

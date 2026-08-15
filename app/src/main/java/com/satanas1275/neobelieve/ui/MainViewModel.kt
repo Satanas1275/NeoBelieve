@@ -26,6 +26,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
+    // Etat "en cours de résolution/lecture" -> permet d'afficher un loader sur la ligne
+    // cliquée au lieu de rien du tout pendant que ça extrait le flux.
+    private val _loadingTrackId = MutableStateFlow<String?>(null)
+    val loadingTrackId: StateFlow<String?> = _loadingTrackId.asStateFlow()
+
+    private val _downloadingTrackIds = MutableStateFlow<Set<String>>(emptySet())
+    val downloadingTrackIds: StateFlow<Set<String>> = _downloadingTrackIds.asStateFlow()
+
+    // Message d'erreur ponctuel affiché en Snackbar, jamais un crash silencieux.
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
     val queue = repository.queue
     val downloads = repository.downloads
 
@@ -44,26 +56,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isSearching.value = true
             runCatching { repository.search(q) }
                 .onSuccess { _searchResults.value = it }
-                .onFailure { _searchResults.value = emptyList() }
+                .onFailure {
+                    _searchResults.value = emptyList()
+                    _errorMessage.value = "Recherche impossible pour l'instant."
+                }
             _isSearching.value = false
         }
     }
 
-    /** Lance un morceau seul : la suite se peuple automatiquement (radio auto, comme sur YT Music). */
+    /**
+     * Lance un morceau seul : la suite se peuple automatiquement (radio auto).
+     * Tout est catché ici -> une extraction ratée (réseau, YouTube qui change un truc,
+     * etc.) affiche une erreur au lieu de crasher toute l'app.
+     */
     fun playSingle(track: Track) {
         viewModelScope.launch {
-            repository.playSingleWithAutoRadio(track)
-            resolveAndPlay(startTrack = track)
-            repository.recordHistory(track)
+            _loadingTrackId.value = track.id
+            runCatching {
+                repository.playSingleWithAutoRadio(track)
+                resolveAndPlay(startTrack = track)
+                repository.recordHistory(track)
+            }.onFailure {
+                _errorMessage.value = "Impossible de lire « ${track.title} »."
+            }
+            _loadingTrackId.value = null
         }
     }
 
     /** Lance une vraie playlist depuis une position donnée. */
     fun playFromPlaylist(tracks: List<Track>, startIndex: Int) {
+        val track = tracks.getOrNull(startIndex) ?: return
         viewModelScope.launch {
-            repository.playPlaylist(tracks, startIndex)
-            resolveAndPlay(startTrack = tracks[startIndex])
-            repository.recordHistory(tracks[startIndex])
+            _loadingTrackId.value = track.id
+            runCatching {
+                repository.playPlaylist(tracks, startIndex)
+                resolveAndPlay(startTrack = track)
+                repository.recordHistory(track)
+            }.onFailure {
+                _errorMessage.value = "Impossible de lire « ${track.title} »."
+            }
+            _loadingTrackId.value = null
         }
     }
 
@@ -73,14 +105,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // On ne résout que le début de la queue tout de suite pour ne pas bloquer le play,
         // le reste peut être résolu à la volée quand on avance (simplifié ici pour le v1).
         currentQueue.take(5).forEach { t ->
-            repository.resolveStreamUrl(t)?.let { urls[t.id] = it }
+            runCatching { repository.resolveStreamUrl(t) }
+                .getOrNull()
+                ?.let { urls[t.id] = it }
+        }
+        if (urls[startTrack.id] == null) {
+            error("Flux audio introuvable pour ${startTrack.title}")
         }
         val startIndex = currentQueue.indexOfFirst { it.id == startTrack.id }.coerceAtLeast(0)
         player.playQueue(currentQueue, urls, startIndex)
     }
 
     fun download(track: Track) {
-        DownloadTrackWorker.enqueue(getApplication(), track)
+        val workName = DownloadTrackWorker.enqueue(getApplication(), track)
+        _downloadingTrackIds.value = _downloadingTrackIds.value + track.id
+        viewModelScope.launch {
+            androidx.work.WorkManager.getInstance(getApplication())
+                .getWorkInfosForUniqueWorkFlow(workName)
+                .collect { infos ->
+                    val info = infos.firstOrNull() ?: return@collect
+                    when (info.state) {
+                        androidx.work.WorkInfo.State.SUCCEEDED -> {
+                            _downloadingTrackIds.value = _downloadingTrackIds.value - track.id
+                        }
+                        androidx.work.WorkInfo.State.FAILED,
+                        androidx.work.WorkInfo.State.CANCELLED -> {
+                            _downloadingTrackIds.value = _downloadingTrackIds.value - track.id
+                            _errorMessage.value = "Échec du téléchargement de « ${track.title} »."
+                        }
+                        else -> Unit
+                    }
+                }
+        }
+    }
+
+    fun errorShown() {
+        _errorMessage.value = null
     }
 
     override fun onCleared() {
