@@ -1,80 +1,69 @@
 # 🎧 NeoBelieve
 
-**NeoBelieve** is a **music application** that appears out of nowhere to let you enjoy your own music in **high quality**, with **no ads** and no intrusive algorithms.
+Appli de musique en streaming **gratuite et sans pub**. Compte `rocknite-studio`,
+remote control et partage arrivent dans une phase ultérieure — cette branche `main`
+se concentre sur un **client Android v1 fonctionnel**.
 
-The idea is simple: press play, let go, and just listen.
+> L'ancien prototype web (Flask + yt-dlp) est archivé sur la branche `legacy-web-prototype`.
 
-> ⚠️ This project is **still under active development**. Features may change at any time.
+## 🖥️ Plateformes
 
----
+- 📱 **Android** — en cours (ce repo)
+- 💻 **PC (Rust)** — prévu plus tard
+- ☁️ **Backend / comptes rocknite-studio / remote** — prévu plus tard
 
-## 🖥️ Platforms
+## ✨ Scope du v1 Android
 
-* 💻 Desktop (Linux / Windows / macOS – planned)
-* 📱 Mobile (Android / iOS – planned)
+- 🔎 Recherche de titres (via [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor),
+  moteur d'extraction YouTube Music sans clé API — même base que ReVanced/InnerTune/ViMusic)
+- ▶️ Lecture en streaming via Media3/ExoPlayer, avec notification + lockscreen (MediaSession)
+- 🌀 File d'attente : soit une vraie playlist, soit une **radio auto** (on lance un titre seul,
+  la suite se peuple automatiquement avec les morceaux liés — comme sur YouTube Music)
+- 📥 Téléchargement offline (WorkManager, stockage privé de l'app)
+- 🎨 Thème clair/sombre, accent turquoise
+- ⚡ Pensé pour rester fluide sur du matériel limité (LazyColumn, pas de dynamic color,
+  cache Coil, pas de recompositions inutiles)
 
-> Mobile builds will arrive once the project reaches a stable state.
+## 🏗️ Architecture
 
----
+```
+app/src/main/java/com/satanas1275/neobelieve/
+├── data/
+│   ├── model/        Track, QueueSource
+│   ├── extractor/     MusicExtractor (NewPipeExtractor) + OkHttpDownloader
+│   ├── local/         Room (downloads, historique)
+│   └── repository/    MusicRepository (point d'entrée unique pour l'UI)
+├── playback/          PlaybackService (MediaSessionService) + PlayerController
+├── download/          DownloadTrackWorker (WorkManager)
+└── ui/                MainViewModel + écrans Compose (search / player / library)
+```
 
-## ✨ Features
+## ⚠️ À tester / affiner sur device
 
-* 🎧 Music playback
-* 🎶 High-quality audio
-* 🚫 No advertisements
-* 🧠 Simple and immersive experience
-* ⚡ Lightweight application
-* 🛠️ Actively developed
+- Les content filters YouTube Music de NewPipeExtractor (`music_songs`) peuvent bouger
+  d'une version à l'autre de la lib — à vérifier au premier build réel.
+- La résolution de flux audio pour toute la queue n'est faite que sur les 5 premiers
+  titres au lancement (pour ne pas bloquer le `play`) — à améliorer avec une résolution
+  à la volée quand on approche de la fin de la queue chargée.
+- Icône de lancement = placeholder turquoise, à remplacer par un vrai logo.
 
----
+## 🚧 Roadmap
 
-## 🚧 Project Status
+- [x] v1 Android : recherche, lecture, radio auto, download offline
+- [ ] Backend Rust (comptes rocknite-studio, sync remote)
+- [ ] Client PC (Rust)
+- [ ] Bouton "partager" (lien profond `neobelieve://track/...`)
 
-NeoBelieve is currently **in development**.
+## 📜 Licence
 
-This means:
+CC BY-NC-SA 4.0 — voir [LICENSE.md](LICENSE.md). Pas de revente, attribution obligatoire.
 
-* Some features are incomplete
-* Bugs may exist
-* Frequent changes are expected
+## 🚀 Ouvrir le projet
 
-Feedback, ideas, and suggestions are welcome.
+Le wrapper Gradle n'est pas commit (jar binaire). Ouvre simplement le dossier dans
+**Android Studio** (Ladybug ou plus récent) : il proposera de générer le wrapper
+et de synchroniser automatiquement au premier lancement.
 
----
+## 🖤 Auteur
 
-## 🧑‍💻 Contributing
-
-Contributions are welcome **as long as they respect the license**.
-
-You may:
-
-* Fork the project
-* Modify the code
-* Share your version under the **same license**
-
-You may **NOT**:
-
-* Sell the application or any derivative work
-* Claim authorship of the original project
-
-Proper credit to the original author is mandatory.
-
----
-
-## 📜 License
-
-This project is licensed under:
-
-### **Creative Commons Attribution – NonCommercial – ShareAlike 4.0 International (CC BY-NC-SA 4.0)**
-
-* Attribution required
-* Commercial use is forbidden
-* Derivative works must use the same license
-
-See the [LICENSE](LICENSE.md) file for full details.
-
----
-
-## 🖤 Author
-
-Developed by **Satanas1275**, independent **French developer** 🇫🇷
+Développé par **Satanas1275**.

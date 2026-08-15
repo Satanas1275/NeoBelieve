@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple note de musique stylisée en turquoise, en attendant un vrai logo -->
+    <path
+        android:fillColor="#2DD4C8"
+        android:pathData="M62,24 L62,64 A14,14 0 1 1 54,52 L54,36 L74,30 L74,50 A14,14 0 1 1 66,38 L66,30 Z" />
+</vector>
