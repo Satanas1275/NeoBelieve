@@ -73,12 +73,12 @@ fun TrackRow(
                 )
                 DropdownMenuItem(
                     text = { Text("Ajouter en tête de file") },
-                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, contentDescription = null) },
+                    leadingIcon = { Icon(Icons.Default.PlaylistPlay, contentDescription = null) },
                     onClick = { menuOpen = false; onAddNext() },
                 )
                 DropdownMenuItem(
                     text = { Text("Ajouter à la fin de la file") },
-                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null) },
+                    leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
                     onClick = { menuOpen = false; onAddEnd() },
                 )
                 DropdownMenuItem(
@@ -98,7 +98,7 @@ fun TrackRow(
                 )
                 DropdownMenuItem(
                     text = { Text("Ajouter à une playlist") },
-                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null) },
+                    leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
                     onClick = { menuOpen = false; onAddToPlaylist() },
                 )
             }
