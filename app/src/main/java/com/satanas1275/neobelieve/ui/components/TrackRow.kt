@@ -28,6 +28,7 @@ fun TrackRow(
     track: Track,
     isLoading: Boolean = false,
     isDownloading: Boolean = false,
+    downloadProgress: Int? = null,
     onPlay: () -> Unit,
     onAddNext: () -> Unit = {},
     onAddEnd: () -> Unit = {},
@@ -56,7 +57,20 @@ fun TrackRow(
         trailingExtra?.invoke()
 
         when {
-            isDownloading -> CircularProgressIndicator(Modifier.size(20.dp).padding(end = 8.dp), strokeWidth = 2.dp)
+            isDownloading -> {
+                if (downloadProgress != null) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(end = 8.dp)) {
+                        CircularProgressIndicator(
+                            progress = { downloadProgress / 100f },
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Text("$downloadProgress", style = MaterialTheme.typography.labelSmall)
+                    }
+                } else {
+                    CircularProgressIndicator(Modifier.size(20.dp).padding(end = 8.dp), strokeWidth = 2.dp)
+                }
+            }
             isLoading -> CircularProgressIndicator(Modifier.size(20.dp).padding(end = 8.dp), strokeWidth = 2.dp)
             else -> Unit
         }

@@ -38,6 +38,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _downloadingTrackIds = MutableStateFlow<Set<String>>(emptySet())
     val downloadingTrackIds: StateFlow<Set<String>> = _downloadingTrackIds.asStateFlow()
 
+    private val _downloadProgress = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val downloadProgress: StateFlow<Map<String, Int>> = _downloadProgress.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -232,12 +235,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .collect { infos ->
                     val info = infos.firstOrNull() ?: return@collect
                     when (info.state) {
+                        androidx.work.WorkInfo.State.RUNNING -> {
+                            val percent = info.progress.getInt(DownloadTrackWorker.KEY_PROGRESS, -1)
+                            if (percent >= 0) _downloadProgress.value = _downloadProgress.value + (track.id to percent)
+                        }
                         androidx.work.WorkInfo.State.SUCCEEDED -> {
                             _downloadingTrackIds.value = _downloadingTrackIds.value - track.id
+                            _downloadProgress.value = _downloadProgress.value - track.id
                         }
                         androidx.work.WorkInfo.State.FAILED,
                         androidx.work.WorkInfo.State.CANCELLED -> {
                             _downloadingTrackIds.value = _downloadingTrackIds.value - track.id
+                            _downloadProgress.value = _downloadProgress.value - track.id
                             val reason = info.outputData.getString(DownloadTrackWorker.KEY_ERROR)
                             Log.e(TAG, "Download échoué pour ${track.id}: $reason")
                             _errorMessage.value = "Échec du téléchargement : ${reason ?: "raison inconnue, voir logcat"}"

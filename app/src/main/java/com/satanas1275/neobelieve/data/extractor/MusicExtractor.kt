@@ -61,11 +61,17 @@ object MusicExtractor {
             ?: emptyList()
     }
 
-    private fun org.schabi.newpipe.extractor.stream.StreamInfoItem.toTrack() = Track(
-        id = url.substringAfter("watch?v=").substringBefore("&"),
-        title = name,
-        artist = uploaderName ?: "Inconnu",
-        durationSeconds = duration.toInt(),
-        thumbnailUrl = thumbnails.maxByOrNull { it.height }?.url,
-    )
+    private fun org.schabi.newpipe.extractor.stream.StreamInfoItem.toTrack(): Track {
+        val id = url.substringAfter("watch?v=").substringBefore("&")
+        return Track(
+            id = id,
+            title = name,
+            artist = uploaderName ?: "Inconnu",
+            durationSeconds = duration.toInt(),
+            // Les vignettes des résultats de recherche NewPipeExtractor sont basse résolution
+            // (~120-360px) -> pixelisées en plein écran. L'URL statique YouTube pointe vers
+            // une image nette (480x360) et existe pour quasiment toutes les vidéos publiques.
+            thumbnailUrl = "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+        )
+    }
 }

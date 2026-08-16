@@ -33,13 +33,13 @@ class PlayerController(private val context: Context) {
 
     private var controller: MediaController? = null
     private val readyDeferred = CompletableDeferred<MediaController>()
-    // Dispatchers.Main est OBLIGATOIRE ici : MediaController de Media3 n'est pas
-    // thread-safe et lève une exception s'il est touché hors du thread principal.
-    // Le ticker précédent tournait sur Dispatchers.Default par défaut -> crash direct
-    // dès que la lecture démarrait (onIsPlayingChanged -> startTicker -> lecture de
-    // c.currentPosition/c.duration depuis un thread de fond).
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var tickerJob: Job? = null
+
+    // Media3 ne connaît que des MediaItem (id + uri + metadata) ; pour retrouver
+    // le Track complet (thumbnail incluse) quand ExoPlayer avance TOUT SEUL vers
+    // le titre suivant de la queue, il faut garder une table de correspondance.
+    private val trackById = mutableMapOf<String, Track>()
 
     private val _currentTrack = MutableStateFlow<Track?>(null)
     val currentTrack: StateFlow<Track?> = _currentTrack
@@ -68,6 +68,12 @@ class PlayerController(private val context: Context) {
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                         _durationMs.value = c.duration.takeIf { it > 0 } ?: 0L
                         _positionMs.value = 0L
+                        // LE bug : avant, currentTrack n'était mis à jour QUE dans
+                        // playImmediate(). Quand ExoPlayer avançait tout seul dans la
+                        // queue (fin de titre -> suivant), titre/artiste/pochette
+                        // restaient bloqués sur l'ancien morceau alors que le son,
+                        // lui, avait bien changé.
+                        mediaItem?.mediaId?.let { id -> trackById[id]?.let { _currentTrack.value = it } }
                     }
                 })
                 if (!readyDeferred.isCompleted) readyDeferred.complete(c)
@@ -104,21 +110,25 @@ class PlayerController(private val context: Context) {
 
     private suspend fun awaitController(): MediaController = readyDeferred.await()
 
-    private fun buildMediaItem(track: Track, url: String) = MediaItem.Builder()
-        .setMediaId(track.id)
-        .setUri(url)
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setTitle(track.title)
-                .setArtist(track.artist)
-                .setArtworkUri(track.thumbnailUrl?.let { Uri.parse(it) })
-                .build(),
-        )
-        .build()
+    private fun buildMediaItem(track: Track, url: String): MediaItem {
+        trackById[track.id] = track
+        return MediaItem.Builder()
+            .setMediaId(track.id)
+            .setUri(url)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(track.title)
+                    .setArtist(track.artist)
+                    .setArtworkUri(track.thumbnailUrl?.let { Uri.parse(it) })
+                    .build(),
+            )
+            .build()
+    }
 
     /** Lance IMMÉDIATEMENT un seul titre (déjà résolu) — c'est le chemin critique de latence. */
     suspend fun playImmediate(track: Track, url: String) {
         val c = awaitController()
+        trackById.clear()
         c.setMediaItems(listOf(buildMediaItem(track, url)), 0, 0L)
         c.prepare()
         c.play()

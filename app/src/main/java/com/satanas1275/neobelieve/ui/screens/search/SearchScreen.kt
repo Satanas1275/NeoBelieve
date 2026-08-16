@@ -26,6 +26,7 @@ fun SearchScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     val isSearching by viewModel.isSearching.collectAsState()
     val loadingTrackId by viewModel.loadingTrackId.collectAsState()
     val downloadingIds by viewModel.downloadingTrackIds.collectAsState()
+    val downloadProgress by viewModel.downloadProgress.collectAsState()
     var trackForPlaylistDialog by remember { mutableStateOf<Track?>(null) }
     val focusRequester = remember { FocusRequester() }
 
@@ -61,6 +62,7 @@ fun SearchScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                     track = track,
                     isLoading = loadingTrackId == track.id,
                     isDownloading = downloadingIds.contains(track.id),
+                    downloadProgress = downloadProgress[track.id],
                     onPlay = { viewModel.playSingle(track) },
                     onAddNext = { viewModel.addToQueueNext(track) },
                     onAddEnd = { viewModel.addToQueueEnd(track) },

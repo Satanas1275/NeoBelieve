@@ -64,7 +64,9 @@ dependencies {
     // Media3 (lecture + notif/lockscreen via MediaSession)
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
+    implementation("androidx.media3:media3-datasource:1.4.1")
     implementation("androidx.media3:media3-datasource-okhttp:1.4.1")
+    implementation("androidx.media3:media3-database:1.4.1")
 
     // Extraction YouTube Music sans clé API (moteur utilisé par NewPipe/ReVanced/InnerTune).
     // v0.24.1 était trop vieux : YouTube rejette les vieilles versions de client côté

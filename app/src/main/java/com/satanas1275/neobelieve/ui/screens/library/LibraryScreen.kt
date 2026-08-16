@@ -194,6 +194,8 @@ private fun NavCard(icon: androidx.compose.ui.graphics.vector.ImageVector, iconB
 @Composable
 private fun FavoritesList(viewModel: MainViewModel) {
     val favorites by viewModel.favorites.collectAsState(initial = emptyList())
+    val downloadingIds by viewModel.downloadingTrackIds.collectAsState()
+    val downloadProgress by viewModel.downloadProgress.collectAsState()
     var trackForPlaylistDialog by remember { mutableStateOf<Track?>(null) }
 
     if (favorites.isEmpty()) {
@@ -203,6 +205,8 @@ private fun FavoritesList(viewModel: MainViewModel) {
             items(favorites, key = { it.id }) { track ->
                 TrackRow(
                     track = track,
+                    isDownloading = downloadingIds.contains(track.id),
+                    downloadProgress = downloadProgress[track.id],
                     onPlay = { viewModel.playFromPlaylist(favorites, favorites.indexOf(track)) },
                     onAddNext = { viewModel.addToQueueNext(track) },
                     onAddEnd = { viewModel.addToQueueEnd(track) },
@@ -219,6 +223,8 @@ private fun FavoritesList(viewModel: MainViewModel) {
 @Composable
 private fun HistoryList(viewModel: MainViewModel) {
     val history by viewModel.history.collectAsState(initial = emptyList())
+    val downloadingIds by viewModel.downloadingTrackIds.collectAsState()
+    val downloadProgress by viewModel.downloadProgress.collectAsState()
     var trackForPlaylistDialog by remember { mutableStateOf<Track?>(null) }
 
     if (history.isEmpty()) {
@@ -229,6 +235,8 @@ private fun HistoryList(viewModel: MainViewModel) {
                 val track = Track(entry.trackId, entry.title, entry.artist, 0, entry.thumbnailUrl)
                 TrackRow(
                     track = track,
+                    isDownloading = downloadingIds.contains(track.id),
+                    downloadProgress = downloadProgress[track.id],
                     onPlay = { viewModel.playSingle(track) },
                     onAddNext = { viewModel.addToQueueNext(track) },
                     onAddEnd = { viewModel.addToQueueEnd(track) },

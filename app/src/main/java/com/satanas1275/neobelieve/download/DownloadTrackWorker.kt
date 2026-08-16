@@ -61,8 +61,27 @@ class DownloadTrackWorker(
                     return@withContext failWith("HTTP ${response.code} lors du téléchargement")
                 }
                 val body = response.body ?: return@withContext failWith("réponse vide du serveur")
+                val totalBytes = body.contentLength() // -1 si le serveur ne l'annonce pas
                 body.byteStream().use { input ->
-                    outFile.outputStream().use { output -> input.copyTo(output) }
+                    outFile.outputStream().use { output ->
+                        val buffer = ByteArray(16 * 1024)
+                        var copied = 0L
+                        var lastReportedPercent = -1
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read == -1) break
+                            output.write(buffer, 0, read)
+                            copied += read
+                            if (totalBytes > 0) {
+                                val percent = ((copied * 100) / totalBytes).toInt()
+                                // On ne publie que si le pourcentage a bougé, pas à chaque chunk.
+                                if (percent != lastReportedPercent) {
+                                    lastReportedPercent = percent
+                                    setProgressAsync(workDataOf(KEY_PROGRESS to percent))
+                                }
+                            }
+                        }
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -90,6 +109,7 @@ class DownloadTrackWorker(
         private const val KEY_DURATION = "duration"
         private const val KEY_THUMBNAIL = "thumbnail"
         const val KEY_ERROR = "error_reason"
+        const val KEY_PROGRESS = "progress_percent"
 
         fun enqueue(context: Context, track: Track): String {
             val data = workDataOf(
