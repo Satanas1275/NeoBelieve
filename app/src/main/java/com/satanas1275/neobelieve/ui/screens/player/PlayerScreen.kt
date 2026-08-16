@@ -5,8 +5,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
@@ -14,9 +17,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.satanas1275.neobelieve.data.model.Track
 import com.satanas1275.neobelieve.ui.MainViewModel
+import com.satanas1275.neobelieve.ui.components.PlaylistPickerHost
 
 @Composable
 fun PlayerScreen(viewModel: MainViewModel) {
@@ -25,6 +31,7 @@ fun PlayerScreen(viewModel: MainViewModel) {
     val queue by viewModel.queue.collectAsState()
     val positionMs by viewModel.player.positionMs.collectAsState()
     val durationMs by viewModel.player.durationMs.collectAsState()
+    var trackForPlaylistDialog by remember { mutableStateOf<Track?>(null) }
 
     // Pendant qu'on drag le slider, on affiche la position locale (pas celle du player,
     // sinon ça saute en boucle tant qu'on n'a pas relâché le doigt).
@@ -37,10 +44,14 @@ fun PlayerScreen(viewModel: MainViewModel) {
             }
             return@Column
         }
+        val currentTrack = current!!
+        val isFavorite by remember(currentTrack.id) { viewModel.observeIsFavorite(currentTrack.id) }
+            .collectAsState(initial = false)
 
         AsyncImage(
-            model = current?.thumbnailUrl,
+            model = currentTrack.thumbnailUrl,
             contentDescription = null,
+            contentScale = ContentScale.Crop,
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
@@ -48,8 +59,24 @@ fun PlayerScreen(viewModel: MainViewModel) {
         )
 
         Spacer(Modifier.height(16.dp))
-        Text(current?.title.orEmpty(), style = MaterialTheme.typography.titleLarge)
-        Text(current?.artist.orEmpty(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(currentTrack.title, style = MaterialTheme.typography.titleLarge)
+                Text(currentTrack.artist, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            // Favori + ajout à une playlist pour le titre EN COURS, directement accessibles
+            // sans repasser par le menu "..." d'une ligne de recherche.
+            IconButton(onClick = { viewModel.toggleFavorite(currentTrack) }) {
+                Icon(
+                    if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = if (isFavorite) "Retirer des favoris" else "Ajouter aux favoris",
+                    tint = if (isFavorite) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                )
+            }
+            IconButton(onClick = { trackForPlaylistDialog = currentTrack }) {
+                Icon(Icons.Default.PlaylistAdd, contentDescription = "Ajouter à une playlist")
+            }
+        }
 
         Spacer(Modifier.height(12.dp))
 
@@ -100,6 +127,7 @@ fun PlayerScreen(viewModel: MainViewModel) {
                         AsyncImage(
                             model = track.thumbnailUrl,
                             contentDescription = null,
+                            contentScale = ContentScale.Crop,
                             modifier = Modifier.size(40.dp).clip(RoundedCornerShape(6.dp)),
                         )
                     },
@@ -107,6 +135,8 @@ fun PlayerScreen(viewModel: MainViewModel) {
             }
         }
     }
+
+    PlaylistPickerHost(viewModel, trackForPlaylistDialog) { trackForPlaylistDialog = null }
 }
 
 private fun formatMs(ms: Long): String {

@@ -155,6 +155,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 val url = repository.resolveStreamUrl(track) ?: return@launch
                 player.insertNext(track, url)
+                repository.reflectAddToQueueNext(track, player.currentTrack.value?.id)
             }.onFailure { _errorMessage.value = "Impossible d'ajouter « ${track.title} » à la file." }
         }
     }
@@ -164,6 +165,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 val url = repository.resolveStreamUrl(track) ?: return@launch
                 player.appendToQueue(track, url)
+                repository.reflectAddToQueueEnd(track)
             }.onFailure { _errorMessage.value = "Impossible d'ajouter « ${track.title} » à la file." }
         }
     }

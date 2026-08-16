@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -137,7 +138,7 @@ private fun QuickAccessCell(title: String, thumbnailUrl: String?, onClick: () ->
             .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick),
     ) {
-        AsyncImage(model = thumbnailUrl, contentDescription = null, modifier = Modifier.fillMaxSize())
+        AsyncImage(model = thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         Box(
             Modifier
                 .fillMaxWidth()
@@ -190,7 +191,7 @@ private fun RecommendationCard(track: Track, onClick: () -> Unit) {
     ) {
         Box(Modifier.size(120.dp).clip(RoundedCornerShape(10.dp))) {
             if (track.thumbnailUrl != null) {
-                AsyncImage(model = track.thumbnailUrl, contentDescription = null, modifier = Modifier.fillMaxSize())
+                AsyncImage(model = track.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             } else {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
                     Icon(Icons.Default.MusicNote, contentDescription = null)

@@ -69,12 +69,27 @@ class MusicRepository(context: Context) {
         _queue.value = listOf(track)
     }
 
-    /** Charge la radio auto en tâche de fond et l'ajoute à la queue existante (appelé APRÈS le démarrage du son). */
+    /** Charge la radio auto en tâche de fond et l'ajoute à la queue existante (appelé APRÈS le début du son). */
     suspend fun loadAutoRadio(seed: Track) {
         val related = MusicExtractor.getRelated(seed.id)
         if (_queueSource.value == QueueSource.AUTO_RADIO) {
             _queue.value = listOf(seed) + related
         }
+    }
+
+    /** Reflète dans la liste affichée un ajout "en fin de file" fait côté lecteur. */
+    fun reflectAddToQueueEnd(track: Track) {
+        if (_queue.value.none { it.id == track.id }) _queue.value = _queue.value + track
+    }
+
+    /** Reflète dans la liste affichée un ajout "juste après le titre en cours" fait côté lecteur. */
+    fun reflectAddToQueueNext(track: Track, currentTrackId: String?) {
+        if (_queue.value.any { it.id == track.id }) return
+        val list = _queue.value.toMutableList()
+        val currentIndex = list.indexOfFirst { it.id == currentTrackId }
+        val insertAt = if (currentIndex >= 0) currentIndex + 1 else list.size
+        list.add(insertAt, track)
+        _queue.value = list
     }
 
     suspend fun resolveStreamUrl(track: Track): String? {

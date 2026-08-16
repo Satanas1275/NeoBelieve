@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -49,6 +50,7 @@ fun MiniPlayerBar(
             AsyncImage(
                 model = track.thumbnailUrl,
                 contentDescription = null,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.size(40.dp).clip(RoundedCornerShape(6.dp)),
             )
             Spacer(Modifier.width(10.dp))

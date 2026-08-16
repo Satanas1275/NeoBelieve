@@ -68,10 +68,10 @@ object MusicExtractor {
             title = name,
             artist = uploaderName ?: "Inconnu",
             durationSeconds = duration.toInt(),
-            // Les vignettes des résultats de recherche NewPipeExtractor sont basse résolution
-            // (~120-360px) -> pixelisées en plein écran. L'URL statique YouTube pointe vers
-            // une image nette (480x360) et existe pour quasiment toutes les vidéos publiques.
-            thumbnailUrl = "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+            // hqdefault.jpg est un canvas 4:3 avec des bandes noires INTÉGRÉES à l'image
+            // pour les vidéos 16:9 -> visibles même en Crop. mqdefault.jpg est un vrai
+            // crop 16:9 (320x180), sans bandes, qui se recadre proprement en carré.
+            thumbnailUrl = "https://i.ytimg.com/vi/$id/mqdefault.jpg",
         )
     }
 }
