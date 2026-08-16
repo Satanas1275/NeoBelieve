@@ -1,8 +1,10 @@
 package com.satanas1275.neobelieve.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.satanas1275.neobelieve.data.extractor.describeExtractionError
 import com.satanas1275.neobelieve.data.model.Track
 import com.satanas1275.neobelieve.data.repository.MusicRepository
 import com.satanas1275.neobelieve.download.DownloadTrackWorker
@@ -11,6 +13,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+private const val TAG = "NeoBelieve"
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -35,6 +39,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val downloadingTrackIds: StateFlow<Set<String>> = _downloadingTrackIds.asStateFlow()
 
     // Message d'erreur ponctuel affiché en Snackbar, jamais un crash silencieux.
+    // On y met le message de l'exception réelle (pas un texte générique) pour pouvoir
+    // diagnostiquer sans avoir à brancher un adb logcat à chaque fois.
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -56,9 +62,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isSearching.value = true
             runCatching { repository.search(q) }
                 .onSuccess { _searchResults.value = it }
-                .onFailure {
+                .onFailure { e ->
+                    Log.e(TAG, "Recherche échouée pour \"$q\"", e)
                     _searchResults.value = emptyList()
-                    _errorMessage.value = "Recherche impossible pour l'instant."
+                    _errorMessage.value = "Recherche impossible : ${e.describeExtractionError()}"
                 }
             _isSearching.value = false
         }
@@ -76,8 +83,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 repository.playSingleWithAutoRadio(track)
                 resolveAndPlay(startTrack = track)
                 repository.recordHistory(track)
-            }.onFailure {
-                _errorMessage.value = "Impossible de lire « ${track.title} »."
+            }.onFailure { e ->
+                Log.e(TAG, "Lecture échouée pour ${track.id} (${track.title})", e)
+                _errorMessage.value = "Lecture impossible : ${e.describeExtractionError()}"
             }
             _loadingTrackId.value = null
         }
@@ -92,8 +100,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 repository.playPlaylist(tracks, startIndex)
                 resolveAndPlay(startTrack = track)
                 repository.recordHistory(track)
-            }.onFailure {
-                _errorMessage.value = "Impossible de lire « ${track.title} »."
+            }.onFailure { e ->
+                Log.e(TAG, "Lecture échouée pour ${track.id} (${track.title})", e)
+                _errorMessage.value = "Lecture impossible : ${e.describeExtractionError()}"
             }
             _loadingTrackId.value = null
         }
@@ -102,15 +111,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun resolveAndPlay(startTrack: Track) {
         val currentQueue = repository.queue.value
         val urls = mutableMapOf<String, String>()
+        var lastResolveError: Throwable? = null
         // On ne résout que le début de la queue tout de suite pour ne pas bloquer le play,
         // le reste peut être résolu à la volée quand on avance (simplifié ici pour le v1).
         currentQueue.take(5).forEach { t ->
             runCatching { repository.resolveStreamUrl(t) }
+                .onFailure { lastResolveError = it; Log.e(TAG, "resolveStreamUrl a échoué pour ${t.id}", it) }
                 .getOrNull()
                 ?.let { urls[t.id] = it }
         }
         if (urls[startTrack.id] == null) {
-            error("Flux audio introuvable pour ${startTrack.title}")
+            throw lastResolveError ?: IllegalStateException("Flux audio introuvable pour ${startTrack.title}")
         }
         val startIndex = currentQueue.indexOfFirst { it.id == startTrack.id }.coerceAtLeast(0)
         player.playQueue(currentQueue, urls, startIndex)
@@ -131,7 +142,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         androidx.work.WorkInfo.State.FAILED,
                         androidx.work.WorkInfo.State.CANCELLED -> {
                             _downloadingTrackIds.value = _downloadingTrackIds.value - track.id
-                            _errorMessage.value = "Échec du téléchargement de « ${track.title} »."
+                            val reason = info.outputData.getString(DownloadTrackWorker.KEY_ERROR)
+                            Log.e(TAG, "Download échoué pour ${track.id}: $reason")
+                            _errorMessage.value = "Échec du téléchargement : ${reason ?: "raison inconnue, voir logcat"}"
                         }
                         else -> Unit
                     }
