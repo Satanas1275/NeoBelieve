@@ -22,9 +22,9 @@ private val DarkColors = darkColorScheme(
 )
 
 private val LightColors = lightColorScheme(
-    primary = TurquoiseAccentDim,
+    primary = LightPrimary,
     onPrimary = Color.White,
-    secondary = TurquoiseAccent,
+    secondary = LightPrimary,
     tertiary = TurquoiseAccentDim,
     background = LightBackground,
     onBackground = LightOnBackground,

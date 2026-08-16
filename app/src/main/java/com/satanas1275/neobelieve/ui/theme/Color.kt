@@ -15,6 +15,7 @@ val DarkOnBackground = Color(0xFFE7F3F1)
 val DarkOnSurfaceVariant = Color(0xFFA8BDBA)
 
 // --- Light theme ---
+val LightPrimary = Color(0xFF1C7C7B) // demandé explicitement pour le thème clair
 val LightBackground = Color(0xFFF5FBFA)
 val LightSurface = Color(0xFFFFFFFF)
 val LightSurfaceVariant = Color(0xFFE1F1EF)

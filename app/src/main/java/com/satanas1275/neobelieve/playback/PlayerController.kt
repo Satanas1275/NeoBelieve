@@ -12,6 +12,7 @@ import com.google.common.util.concurrent.MoreExecutors
 import com.satanas1275.neobelieve.data.model.Track
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -32,7 +33,12 @@ class PlayerController(private val context: Context) {
 
     private var controller: MediaController? = null
     private val readyDeferred = CompletableDeferred<MediaController>()
-    private val scope = CoroutineScope(SupervisorJob())
+    // Dispatchers.Main est OBLIGATOIRE ici : MediaController de Media3 n'est pas
+    // thread-safe et lève une exception s'il est touché hors du thread principal.
+    // Le ticker précédent tournait sur Dispatchers.Default par défaut -> crash direct
+    // dès que la lecture démarrait (onIsPlayingChanged -> startTicker -> lecture de
+    // c.currentPosition/c.duration depuis un thread de fond).
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var tickerJob: Job? = null
 
     private val _currentTrack = MutableStateFlow<Track?>(null)
