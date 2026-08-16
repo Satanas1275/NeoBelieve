@@ -12,6 +12,7 @@ data class Track(
     val thumbnailUrl: String?,
     val isDownloaded: Boolean = false,
     val localFilePath: String? = null,
+    val isFavorite: Boolean = false,
 )
 
 /** D'où vient la queue actuelle : une vraie playlist, ou juste "radio auto" après un titre lancé seul. */

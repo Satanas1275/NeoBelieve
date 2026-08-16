@@ -5,33 +5,47 @@ import android.content.Context
 import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
 import com.satanas1275.neobelieve.data.model.Track
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 /**
- * Pont entre l'UI Compose et le PlaybackService. Un seul MediaController partagé
- * pour toute l'app (créé au lancement de MainActivity, libéré à sa fermeture).
+ * Pont entre l'UI Compose et le PlaybackService.
  *
- * Le controller se construit de façon async (buildAsync). Avant, playQueue() faisait
- * un `controller?.apply { ... }` qui ne plantait pas mais ne faisait RIEN si le
- * controller n'était pas encore prêt (ex: premier tap sur play juste après le lancement
- * de l'app) -> on attend maintenant la connexion via un CompletableDeferred.
+ * Point clé pour la latence au démarrage : on ne fait QU'UN SEUL appel réseau
+ * (resolveStreamUrl du titre demandé) avant de lancer `play()`. Le reste de la
+ * queue (radio auto ou playlist) est résolu et ajouté en tâche de fond une fois
+ * que le son a déjà démarré -> c'est le ViewModel qui orchestre ça, ce controller
+ * ne fait qu'exposer les primitives (play immédiat / append en fond / seek).
  */
 class PlayerController(private val context: Context) {
 
     private var controller: MediaController? = null
     private val readyDeferred = CompletableDeferred<MediaController>()
+    private val scope = CoroutineScope(SupervisorJob())
+    private var tickerJob: Job? = null
 
     private val _currentTrack = MutableStateFlow<Track?>(null)
     val currentTrack: StateFlow<Track?> = _currentTrack
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying
+
+    private val _positionMs = MutableStateFlow(0L)
+    val positionMs: StateFlow<Long> = _positionMs
+
+    private val _durationMs = MutableStateFlow(0L)
+    val durationMs: StateFlow<Long> = _durationMs
 
     fun connect() {
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
@@ -40,9 +54,14 @@ class PlayerController(private val context: Context) {
             {
                 val c = future.get()
                 controller = c
-                c.addListener(object : androidx.media3.common.Player.Listener {
+                c.addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         _isPlaying.value = isPlaying
+                        if (isPlaying) startTicker() else stopTicker()
+                    }
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        _durationMs.value = c.duration.takeIf { it > 0 } ?: 0L
+                        _positionMs.value = 0L
                     }
                 })
                 if (!readyDeferred.isCompleted) readyDeferred.complete(c)
@@ -51,44 +70,76 @@ class PlayerController(private val context: Context) {
         )
     }
 
+    private fun startTicker() {
+        stopTicker()
+        tickerJob = scope.launch {
+            while (true) {
+                val c = controller
+                if (c != null) {
+                    _positionMs.value = c.currentPosition.coerceAtLeast(0)
+                    val d = c.duration
+                    if (d > 0) _durationMs.value = d
+                }
+                delay(500)
+            }
+        }
+    }
+
+    private fun stopTicker() {
+        tickerJob?.cancel()
+        tickerJob = null
+    }
+
     fun release() {
+        stopTicker()
         controller?.release()
         controller = null
     }
 
-    /** Attend que le MediaController soit connecté avant de continuer. */
     private suspend fun awaitController(): MediaController = readyDeferred.await()
 
-    suspend fun playQueue(tracks: List<Track>, streamUrls: Map<String, String>, startIndex: Int = 0) {
-        val items = tracks.mapNotNull { track ->
-            val url = streamUrls[track.id] ?: return@mapNotNull null
-            MediaItem.Builder()
-                .setMediaId(track.id)
-                .setUri(url)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(track.title)
-                        .setArtist(track.artist)
-                        .setArtworkUri(track.thumbnailUrl?.let { Uri.parse(it) })
-                        .build(),
-                )
-                .build()
-        }
-        if (items.isEmpty()) return
+    private fun buildMediaItem(track: Track, url: String) = MediaItem.Builder()
+        .setMediaId(track.id)
+        .setUri(url)
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(track.title)
+                .setArtist(track.artist)
+                .setArtworkUri(track.thumbnailUrl?.let { Uri.parse(it) })
+                .build(),
+        )
+        .build()
 
-        val safeStartIndex = startIndex.coerceIn(0, items.lastIndex)
+    /** Lance IMMÉDIATEMENT un seul titre (déjà résolu) — c'est le chemin critique de latence. */
+    suspend fun playImmediate(track: Track, url: String) {
         val c = awaitController()
-        c.setMediaItems(items, safeStartIndex, 0L)
+        c.setMediaItems(listOf(buildMediaItem(track, url)), 0, 0L)
         c.prepare()
         c.play()
-
-        _currentTrack.value = tracks.getOrNull(safeStartIndex)
+        _currentTrack.value = track
         _isPlaying.value = true
+    }
+
+    /** Ajoute un titre déjà résolu à la fin de la queue en cours (pour la suite de la radio auto/playlist). */
+    suspend fun appendToQueue(track: Track, url: String) {
+        awaitController().addMediaItem(buildMediaItem(track, url))
+    }
+
+    /** Insère juste après le titre en cours (pour "ajouter en tête de file"). */
+    suspend fun insertNext(track: Track, url: String) {
+        val c = awaitController()
+        val index = (c.currentMediaItemIndex + 1).coerceAtMost(c.mediaItemCount)
+        c.addMediaItem(index, buildMediaItem(track, url))
     }
 
     fun togglePlayPause() {
         val c = controller ?: return
         if (c.isPlaying) c.pause() else c.play()
+    }
+
+    fun seekTo(positionMs: Long) {
+        controller?.seekTo(positionMs)
+        _positionMs.value = positionMs
     }
 
     fun skipNext() = controller?.seekToNextMediaItem()

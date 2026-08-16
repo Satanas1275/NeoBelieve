@@ -6,8 +6,14 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [DownloadedTrackEntity::class, HistoryEntity::class],
-    version = 1,
+    entities = [
+        DownloadedTrackEntity::class,
+        HistoryEntity::class,
+        FavoriteTrackEntity::class,
+        PlaylistEntity::class,
+        PlaylistTrackEntity::class,
+    ],
+    version = 2,
     exportSchema = false,
 )
 abstract class NeoBelieveDatabase : RoomDatabase() {
@@ -22,7 +28,11 @@ abstract class NeoBelieveDatabase : RoomDatabase() {
                     context.applicationContext,
                     NeoBelieveDatabase::class.java,
                     "neobelieve.db",
-                ).build().also { instance = it }
+                )
+                    // v1 (avant playlists/favoris) : pas encore en prod, on accepte de
+                    // perdre les données locales plutôt que d'écrire des migrations pour rien.
+                    .fallbackToDestructiveMigration()
+                    .build().also { instance = it }
             }
     }
 }
